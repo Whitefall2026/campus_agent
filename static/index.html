@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>校园管家 · Campus Agent</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🎓</span>
+    <div class="brand-text">
+      <span class="name">校园管家</span>
+      <span class="tagline">不让任何一件重要的事被吞没</span>
+    </div>
+  </div>
+  <nav class="nav">
+    <a href="#/input" data-page="input" class="nav-item active">⌨️ 输入</a>
+    <a href="#/schedule" data-page="schedule" class="nav-item">🗓️ 日程</a>
+    <a href="#/todos" data-page="todos" class="nav-item">✅ 待办</a>
+  </nav>
+  <div class="stats" id="stats"></div>
+  <div class="toolbar">
+    <button id="seedBtn" class="ghost small">载入示例</button>
+  </div>
+</header>
+
+<main>
+  <!-- ===================== 页面一：输入 ===================== -->
+  <section class="page page-input" data-page="input">
+    <div class="page-head">
+      <h1>输入与提取</h1>
+      <p class="page-sub">自然语言 / 微信自动提取 → AI 分析与分类 → 你确认采纳到“日程”或“待办”</p>
+    </div>
+
+    <div class="input-grid">
+      <div class="col">
+        <!-- 自然语言输入 -->
+        <div class="card input-card">
+          <div class="card-head">
+            <h2>说一件要处理的事</h2>
+            <span class="hint">支持自然语言，例如「周四晚7点社团例会」</span>
+          </div>
+          <textarea id="input" rows="4" placeholder="例如：周四晚上7点参加社团例会，在二教401&#10;&#10;例如：数学作业下周一上午9点前提交"></textarea>
+          <div class="actions">
+            <button id="parseBtn" class="primary">⚡ 解析</button>
+            <button id="resetBtn" class="ghost">清空</button>
+          </div>
+          <div class="samples" id="samples"></div>
+        </div>
+
+        <!-- 识别预览 + 采纳 -->
+        <div class="card preview hidden" id="preview">
+          <div class="card-head">
+            <h2>识别结果</h2>
+            <span class="hint" id="pvKindHint"></span>
+          </div>
+          <div class="pv-title" id="pvTitle"></div>
+          <div class="pv-grid" id="pvGrid"></div>
+          <div class="pv-tokens" id="pvTokens"></div>
+          <div class="pv-slot" id="pvSlot"></div>
+          <div class="pv-warn hidden" id="pvWarn"></div>
+          <div class="seg" id="pvKindSeg">
+            <button class="seg-btn" data-kind="schedule">🗓️ 采纳到日程</button>
+            <button class="seg-btn" data-kind="todo">✅ 采纳到待办</button>
+          </div>
+          <div class="actions">
+            <button id="confirmBtn" class="primary">✔ 确认添加</button>
+            <button id="pvCancelBtn" class="ghost">取消</button>
+          </div>
+        </div>
+
+        <!-- 微信自动提取 -->
+        <div class="card" id="wechatCard">
+          <div class="card-head">
+            <h2>📲 微信自动提取</h2>
+            <span class="hint">读取 + 监听微信消息，自动提取日程 / 待办</span>
+          </div>
+          <div id="wxStatus" class="wx-status wx-off">● 未运行</div>
+          <div class="wx-targets">
+            <input id="wxChats" placeholder="文件传输助手（多个会话用逗号分隔）" spellcheck="false">
+            <button id="wxApplyBtn" class="ghost small">保存</button>
+          </div>
+          <label class="wx-opt"><input type="checkbox" id="wxAll"> 监听所有会话</label>
+          <div class="wx-actions">
+            <button id="wxStartBtn" class="ghost small">连接</button>
+            <button id="wxScanBtn" class="ghost small">立即扫描</button>
+            <button id="wxStopBtn" class="ghost small danger-text">断开</button>
+          </div>
+          <div class="wx-meta" id="wxMeta"></div>
+          <div id="wxLog" class="wx-log"></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <!-- AI 分析（含采纳，与自动提取组成一个系统） -->
+        <div class="card pipeline-card" id="aiCard">
+          <div class="card-head">
+            <h2>🤖 AI 日程 / 待办分析</h2>
+            <span class="hint">微信消息 → 预筛 → AI 提取 → 采纳入库</span>
+          </div>
+          <div id="aiStatus" class="ai-status ai-off">○ 未启用</div>
+          <div class="ai-row">
+            <label for="aiEnabled">启用 AI</label>
+            <input type="checkbox" id="aiEnabled">
+          </div>
+          <div class="ai-grid">
+            <div class="ai-row">
+              <label for="aiProvider">服务商</label>
+              <select id="aiProvider">
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="moonshot">Moonshot (Kimi)</option>
+                <option value="custom">自定义</option>
+              </select>
+            </div>
+            <div class="ai-row">
+              <label for="aiModel">模型</label>
+              <input id="aiModel" placeholder="deepseek-chat / …" spellcheck="false">
+            </div>
+            <div class="ai-row hidden" id="aiBaseRow">
+              <label for="aiBaseUrl">接口地址</label>
+              <input id="aiBaseUrl" placeholder="https://api.openai.com/v1" spellcheck="false">
+            </div>
+            <div class="ai-row">
+              <label for="aiKey">API Key</label>
+              <input type="password" id="aiKey" autocomplete="off" placeholder="仅保存在本机">
+            </div>
+          </div>
+          <div class="wx-actions">
+            <button id="aiSaveBtn" class="primary small">保存</button>
+            <button id="aiTestBtn" class="ghost small">测试连接</button>
+          </div>
+          <div class="wx-meta" id="aiMeta"></div>
+        </div>
+
+        <!-- 待采纳（日程 / 待办分流） -->
+        <div class="card pipeline-card" id="aiPendingCard">
+          <div class="card-head">
+            <h2>📥 待你采纳</h2>
+            <span class="hint" id="aiPendingHint">等待分析</span>
+          </div>
+          <div id="aiPendingList"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 页面二：日程 ===================== -->
+  <section class="page page-schedule hidden" data-page="schedule">
+    <div class="page-head">
+      <h1>日程</h1>
+      <p class="page-sub">有固定时间 / 地点的安排都在这条时间轴上，空白处可直接添加</p>
+    </div>
+
+    <div class="schedule-toolbar">
+      <button id="dayPrev" class="ghost">‹</button>
+      <input type="date" id="dayPick">
+      <button id="dayToday" class="ghost small">今天</button>
+      <button id="dayNext" class="ghost">›</button>
+      <div class="day-title" id="dayTitle"></div>
+      <div class="spacer"></div>
+      <button id="addEventBtn" class="primary small">＋ 添加安排</button>
+      <button id="clearScheduleBtn" class="ghost small danger-text">清空日程</button>
+    </div>
+
+    <div class="card due-card hidden" id="dueCard">
+      <div class="card-head"><h2>⏰ 当日截止的待办</h2></div>
+      <div id="dueList"></div>
+    </div>
+
+    <div class="card timeline-card">
+      <div class="timeline" id="scheduleTimeline"></div>
+    </div>
+  </section>
+
+  <!-- ===================== 页面三：待办 ===================== -->
+  <section class="page page-todos hidden" data-page="todos">
+    <div class="page-head">
+      <h1>待办</h1>
+      <p class="page-sub">没有固定时间的任务（含截止时间）。可手动“规划到日程”，之后将接入 AI 自动排期</p>
+    </div>
+
+    <div class="todo-bar">
+      <div class="todo-filter">
+        <button class="chip active" data-todo-filter="open">未完成</button>
+        <button class="chip" data-todo-filter="done">已完成</button>
+        <button class="chip" data-todo-filter="overdue">已逾期</button>
+        <span class="todo-filter-info" id="todoFilterInfo"></span>
+      </div>
+      <button id="addTodoBtn" class="primary small">＋ 添加待办</button>
+      <button id="clearTodoBtn" class="ghost small danger-text">清空待办</button>
+    </div>
+    <div id="todoList" class="todo-list"></div>
+  </section>
+</main>
+
+<footer>
+  校园管家 demo · 数据保存在本地 data/todos.json · 日程进入时间轴，待办等待规划
+</footer>
+
+<!-- 事项编辑 / 新建 / 规划共用弹窗 -->
+<div class="modal-mask hidden" id="itemModal">
+  <div class="modal">
+    <div class="card-head">
+      <h2 id="modalTitle">✏️ 事项</h2>
+      <span class="hint" id="modalHint"></span>
+    </div>
+    <div class="edit-grid">
+      <label class="edit-field full"><span>标题</span><input id="edTitle" spellcheck="false"></label>
+      <label class="edit-field"><span>类型</span>
+        <select id="edKind">
+          <option value="schedule">日程（有固定时间/地点）</option>
+          <option value="todo">待办（任务/截止）</option>
+        </select>
+      </label>
+      <label class="edit-field"><span>优先级</span>
+        <select id="edPriority">
+          <option value="medium">中</option>
+          <option value="high">高</option>
+          <option value="low">低</option>
+        </select>
+      </label>
+      <label class="edit-field"><span>日期</span><input type="date" id="edDate"></label>
+      <label class="edit-field"><span>开始时间</span><input type="time" id="edTime"></label>
+      <label class="edit-field"><span>结束时间</span><input type="time" id="edEndTime"></label>
+      <label class="edit-field"><span>时长（分钟）</span><input type="number" min="0" id="edDuration" placeholder="留空默认 60"></label>
+      <label class="edit-field"><span>地点</span><input id="edLocation" spellcheck="false"></label>
+      <label class="edit-field"><span>截止日期</span><input type="date" id="edDeadline"></label>
+      <label class="edit-field"><span>截止时间</span><input type="time" id="edDeadlineTime"></label>
+    </div>
+    <div class="plan-tip hidden" id="planTip"></div>
+    <div class="actions">
+      <button id="edSaveBtn" class="primary">保存</button>
+      <button id="edCancelBtn" class="ghost">取消</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

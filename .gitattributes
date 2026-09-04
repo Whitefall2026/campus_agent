@@ -1,0 +1,22 @@
+# 文本文件统一以 LF 入库；Windows 检出时 Git 会按需转换
+* text=auto
+
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.js   text eol=lf
+*.toml text eol=lf
+*.txt  text eol=lf
+
+# Windows 脚本保留 CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制资源
+*.png  binary
+*.gif  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary

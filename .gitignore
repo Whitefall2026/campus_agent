@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 本地运行数据：含 API Key / 微信状态 / 日程，严禁提交
+data/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 日志与运行垃圾（wechatauto 也会在运行时产生）
+*.log
+wxauto_logs/
+@AutomationLog.txt
+*.tmp
+
+# 构建产物
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# 编辑器 / 操作系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
