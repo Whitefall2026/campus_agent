@@ -1,10 +1,11 @@
-"""本地 JSON 持久化，数据保存在 data/todos.json。"""
+"""本地 JSON 持久化，数据保存在 <仓库根>/data/todos.json。"""
 from __future__ import annotations
 
 import json
 import os
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+from app.paths import DATA_DIR
+
 DATA_FILE = os.path.join(DATA_DIR, "todos.json")
 
 

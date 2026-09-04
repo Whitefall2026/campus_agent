@@ -24,9 +24,9 @@ import time
 import uuid
 from datetime import datetime
 
-import ai_gateway
-from extractor import parse_text
-import kinds
+from app.ai import gateway as ai_gateway
+from app.core.extractor import parse_text
+from app.core import kinds
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -34,7 +34,7 @@ try:
 except Exception:
     pass
 
-from storage import DATA_DIR
+from app.paths import DATA_DIR
 
 # 只处理文本消息（微信 db 里 local_type=1 显示名为“文本”）
 TEXT_TYPE = "文本"

@@ -96,13 +96,15 @@ AI 调用失败时会自动退回规则引擎的结果供你采纳，不会漏�
 ## 架构
 
 ```
-server.py      标准库 HTTP 服务（API + 静态页面）
-extractor.py   自然语言 → 结构化字段（正则规则引擎）
-scheduler.py   冲突检测 / 时间轴聚合 / 建议时段
-storage.py     本地 JSON 持久化
-wechat_bridge.py  微信读取/监听桥接（WeChatDB + Listener → 自动提取日程）
-ai_gateway.py     AI Gateway（预筛 → 大模型提取 → 待采纳确认）
-static/        前端页面（原生 HTML / CSS / JS，无框架）
+server.py             入口（启动 HTTP 服务；端口、微信自动启动在此处理）
+app/core/             领域核心：extractor（自然语言→结构化）、scheduler（冲突/时间轴）、
+                      kinds（类别）、storage（本地 JSON 持久化）
+app/ai/gateway.py     AI Gateway（预筛 → 大模型提取 → 待采纳确认）
+app/wechat/bridge.py  微信读取/监听桥接（WeChatDB + Listener → 自动提取日程）
+app/web/handlers.py   HTTP 路由 + 静态页面服务
+app/paths.py          仓库内关键路径（data/、static/ 统一定位）
+static/               前端页面（原生 HTML / CSS / JS，无框架）
+wechatauto-replica-main/  第三方库 wechatauto-replica（微信能力，Apache-2.0）
 ```
 
 ## 后续可以怎么升级

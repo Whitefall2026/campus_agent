@@ -35,7 +35,7 @@ git push -u origin feat/my-feature
 代码是纯 Python 标准库实现，改完至少做一次语法/冒烟检查：
 
 ```bash
-python -m py_compile server.py ai_gateway.py extractor.py kinds.py scheduler.py storage.py wechat_bridge.py
+python -m compileall app server.py
 python server.py   # 浏览器打开 http://127.0.0.1:8000 手动过一遍
 ```
 

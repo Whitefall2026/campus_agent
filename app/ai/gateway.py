@@ -23,9 +23,9 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 
-from extractor import parse_text
-import kinds
-from storage import DATA_DIR
+from app.core.extractor import parse_text
+from app.core import kinds
+from app.paths import DATA_DIR
 
 # ---------------------------------------------------------------------------
 # 常量

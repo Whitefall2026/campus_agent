@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
-import kinds
+from . import kinds
 
 WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
 CATEGORY_LABEL = {
