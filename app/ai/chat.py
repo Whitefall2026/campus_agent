@@ -322,6 +322,7 @@ def chat_turn(text: str) -> dict:
     with _LOCK:
         thread = _load_messages()
         thread.append({"role": "user", "content": text, "ts": _now_iso()})
+        _save_messages(thread)
     ai_evidence.add_evidence("chat", text, {"kind": "user_message"})
 
     reply = ""
