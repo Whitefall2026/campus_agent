@@ -1176,9 +1176,11 @@ function renderPlannerPage() {
   }
   const aiNote = (plan.meta && plan.meta.ai_note)
     ? `<span style="margin-left:8px">🤖 ${esc(plan.meta.ai_note)}</span>` : "";
+  const aiAdvice = ((plan.meta && plan.meta.ai_advice) || [])
+    .map((a) => `<div style="margin-top:4px">💡 ${esc(a)}</div>`).join("");
   $("#planHint").innerHTML = (entries.length
     ? `${entries.length} 项待采纳 · 另有 ${(plan.tomorrow || []).length} 项明日优先`
-    : "暂无排程建议") + aiNote;
+    : "暂无排程建议") + aiNote + aiAdvice;
 
   // ---- 预警（阻塞）与明日优先 ----
   const warnBox = $("#planWarnings");

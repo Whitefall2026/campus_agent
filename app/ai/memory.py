@@ -48,15 +48,19 @@ def list_memories() -> list:
 
 
 def add_memory(content: str, importance: float = 0.5,
-               category: str = "profile") -> dict:
+               category: str = "preference",
+               kind: str | None = None) -> dict:
     """写入一条长期记忆；同类别同内容时更新而不是重复堆积。"""
     content = str(content or "").strip()[:300]
     if not content:
         return {}
+    if kind not in ("preference", "personality"):
+        kind = "personality" if "personality" in str(category) else "preference"
     importance = max(0.0, min(1.0, float(importance or 0.5)))
     item = {
         "id": uuid.uuid4().hex[:10],
         "category": category,
+        "kind": kind,
         "content": content,
         "importance": importance,
         "created_at": _now_iso(),
@@ -79,6 +83,18 @@ def add_memory(content: str, importance: float = 0.5,
             data["memories"] = memories[:MAX_MEMORY]
         _save(data)
     return item
+
+
+def remember_preference(content: str, importance: float = 0.5,
+                        category: str = "preference") -> dict:
+    return add_memory(content, importance=importance,
+                      category=category, kind="preference")
+
+
+def remember_personality(content: str, importance: float = 0.5,
+                         category: str = "personality") -> dict:
+    return add_memory(content, importance=importance,
+                      category=category, kind="personality")
 
 
 def clear_memories() -> int:

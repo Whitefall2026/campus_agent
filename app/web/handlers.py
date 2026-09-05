@@ -192,6 +192,8 @@ class Handler(BaseHTTPRequestHandler):
             plan0["meta"]["ai_guided"] = True
             if guide.get("note"):
                 plan0["meta"]["ai_note"] = guide["note"]
+            if guide.get("advice"):
+                plan0["meta"]["ai_advice"] = guide["advice"]
         else:
             plan0 = plan_engine.plan_day(todos, day=day)
         seed = day.year * 10000 + day.month * 100 + day.day

@@ -336,14 +336,17 @@ GUIDE_DAY_SYSTEM = """你是「校园管家」的智能调度决策者。
 把低价值软线任务往后放，而不是把日程塞满。
 
 输入包含候选任务与用户背景。只输出严格 JSON：
-{"order":["任务id", ...], "note":"一句话给用户看的说明"}
+{"order":["任务id", ...], "note":"一句话给用户看的说明",
+ "advice":["一条可执行的建议", ...]}
 
 规则：
 1. 今天截止、已逾期、硬线任务必须排在前面且不得省略；
 2. 软线/无截止/低优先级任务可以排在后面或省略（引擎会自然放到明天优先）；
 3. 高优先级且需要大块精力的任务，优先放到上午等精力高峰时段靠前的位置；
 4. 用户精力低或负载高时，控制“今天推进”的数量，宁可少排也别硬塞；
-5. 只能使用输入里出现的任务 id，不要编造。
+5. 只能使用输入里出现的任务 id，不要编造；
+6. advice 给 0~3 条真正可执行的建议（减负/调整优先级/拆解/时段取舍），
+   语气符合用户的性格偏好，不要空话。
 """
 
 
@@ -354,15 +357,15 @@ def guide_day_order(todos: list, day_iso: str) -> dict:
     try:
         day = date.fromisoformat(str(day_iso or "")[:10])
     except ValueError:
-        return {"order": [], "note": ""}
+        return {"order": [], "note": "", "advice": []}
     cands = engine_mod.candidate_tasks(todos, day)
     if not cands:
-        return {"order": [], "note": ""}
+        return {"order": [], "note": "", "advice": []}
     cands.sort(key=engine_mod._task_key)
     iso = day.isoformat()
     cfg = ai_gateway.load_config()
     if not ai_gateway.is_ready(cfg):
-        return {"order": None, "note": ""}
+        return {"order": None, "note": "", "advice": []}
 
     forced = [
         c for c in cands
@@ -395,7 +398,10 @@ def guide_day_order(todos: list, day_iso: str) -> dict:
         v = state.get(k)
         if v and v != "unknown":
             state_lines.append(f"{label}={v}")
-    mem_lines = [m.get("content") for m in user_memory.list_memories()[:8]]
+    mem_lines = []
+    for m in user_memory.list_memories()[:8]:
+        prefix = "性格：" if m.get("kind") == "personality" else "偏好："
+        mem_lines.append(prefix + str(m.get("content") or ""))
     context = ["日期：" + iso]
     if state_lines:
         context.append("用户状态：" + "、".join(state_lines))
@@ -415,8 +421,10 @@ def guide_day_order(todos: list, day_iso: str) -> dict:
         data = json.loads(text)
         ai_order = [str(x) for x in (data.get("order") or [])]
         note = str(data.get("note") or "").strip()[:120]
+        raw_advice = data.get("advice") if isinstance(data.get("advice"), list) else []
+        advice = [str(x).strip()[:120] for x in raw_advice if str(x).strip()][:3]
     except Exception:
-        return {"order": None, "note": ""}
+        return {"order": None, "note": "", "advice": []}
 
     rest = [x for x in ai_order if x in cand_ids and x not in forced_ids]
     seen = set(forced_ids)
@@ -430,7 +438,7 @@ def guide_day_order(todos: list, day_iso: str) -> dict:
         if cid not in seen:
             final.append(cid)
             seen.add(cid)
-    return {"order": final, "note": note}
+    return {"order": final, "note": note, "advice": advice}
 
 
 def _hour_bucket(time_s: str) -> str:
