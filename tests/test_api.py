@@ -96,7 +96,7 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(res["todo"]["deadline_type"], "soft")
         self.assertEqual(res["todo"]["ddl_float_days"], 2)
 
-        s, res = self.req("GET", "/api/plan?date=" + tomorrow)
+        s, res = self.req("POST", "/api/plan/ai", {"date": tomorrow})
         self.assertEqual(s, 200)
         plan = res["plan"]
         self.assertGreaterEqual(len(plan["entries"]), 1)

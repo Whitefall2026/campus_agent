@@ -1204,10 +1204,13 @@ function renderPlannerPage() {
   const box = $("#planEntries");
   if (!entries.length) {
     box.innerHTML = "";
-    empty.innerHTML = plan.candidates === 0
-      ? `<div class="plan-empty">这一天没有等待规划的任务 🎉
-          <br><span style="font-size:12px">把带截止日期的任务留在「待办」页，规划日当天这里会自动给出排程。</span></div>`
-      : `<div class="plan-empty">任务没排进去：先看看下方预警/明日优先说明。</div>`;
+    empty.innerHTML = plan.meta && plan.meta.view_only && plan.candidates > 0
+      ? `<div class="plan-empty">该日期还没有生成排程方案（浏览模式不会自动重排）。
+          <br><span style="font-size:12px">点右上角「↻ 重新规划」，让 AI 结合画像与精力为这一天排期。</span></div>`
+      : plan.candidates === 0
+        ? `<div class="plan-empty">这一天没有等待规划的任务 🎉
+            <br><span style="font-size:12px">把带截止日期的任务留在「待办」页，规划日当天这里会给出排程。</span></div>`
+        : `<div class="plan-empty">任务没排进去：先看看下方预警/明日优先说明。</div>`;
   } else {
     empty.innerHTML = "";
     const warns = planWarnById();

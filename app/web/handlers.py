@@ -234,6 +234,10 @@ class Handler(BaseHTTPRequestHandler):
                 plan0 = plan_engine.plan_day(todos, day=day)
         else:
             plan0 = plan_engine.plan_day(todos, day=day)
+            plan0["meta"]["view_only"] = True
+            plan0["entries"] = []
+            plan0["tomorrow"] = []
+            plan0["deferrals"] = []
         seed = day.year * 10000 + day.month * 100 + day.day
         plan = plan_risk.plan_with_risk(plan0, seed=seed)
         load = plan_shield.load_metrics(todos, day=day, plan=plan0)
