@@ -82,6 +82,20 @@ main { max-width: 1240px; margin: 0 auto; padding: 22px; }
   border-radius: 6px; font-size: 12px;
 }
 .import-card { margin-bottom: 18px; }
+.ai-you-card { margin-bottom: 18px; }
+.ai-you-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: #eef2ff; border: 1px solid #d6defc; color: #3b4a8f;
+  border-radius: 12px; padding: 8px 14px; font-size: 12.5px;
+  margin-bottom: 14px;
+}
+.ai-you-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.ai-you-chip {
+  background: #f1f4fb; color: var(--ink-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 12px; font-size: 12.5px;
+}
+.ai-you-chip b { color: var(--accent); }
+.ai-you-note { font-size: 12px; color: var(--ink-2); line-height: 1.75; }
 .course-upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .file-btn {
   display: inline-flex; align-items: center; cursor: pointer;

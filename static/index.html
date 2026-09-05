@@ -35,6 +35,8 @@
       <p class="page-sub">把安排直接说给 AI：对话中自动提取日程 / 待办，结果先进“待你采纳”，确认后入库</p>
     </div>
 
+    <div id="aiYouBar" class="ai-you-bar hidden"></div>
+
     <div class="input-grid">
       <div class="col">
         <!-- AI 对话 -->
@@ -124,6 +126,15 @@
     <div class="page-head">
       <h1>我的</h1>
       <p class="page-sub">微信自动提取、AI 分析与预筛等设置都集中在这里，识别结果仍统一到“对话”页的“待你采纳”确认</p>
+    </div>
+
+    <div class="card ai-you-card hidden" id="aiYouCard">
+      <div class="card-head">
+        <h2>🤖 AI 与你</h2>
+        <span class="hint">画像与记忆仅保存在本机，将帮助 AI 提出更贴合你的建议</span>
+        <button id="profileResetBtn" class="ghost small danger-text">重置画像</button>
+      </div>
+      <div id="aiYouBody" class="ai-you-body"></div>
     </div>
 
     <div class="card import-card">

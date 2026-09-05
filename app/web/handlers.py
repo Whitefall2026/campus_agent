@@ -26,6 +26,10 @@ from app.core.storage import load_todos, save_todos
 from app.core import kinds
 from app.ai import gateway as ai_gateway
 from app.ai import chat as ai_chat
+from app.ai import context as ai_context
+from app.ai import profile as ai_profile
+from app.ai import memory as ai_memory
+from app.ai import evidence as ai_evidence
 from app.wechat.bridge import BRIDGE as WX_BRIDGE
 from app.paths import DATA_DIR, STATIC_DIR
 from app.core import courses as course_mod
@@ -137,6 +141,8 @@ class Handler(BaseHTTPRequestHandler):
             pending = ai_gateway.prune_expired_pending()
             pending.reverse()
             return self._json({"ok": True, "pending": pending})
+        if path == "/api/ai/profile":
+            return self._json({"ok": True, **ai_context.profile_summary()})
         if path == "/api/chat/history":
             return self._json({"ok": True, "messages": ai_chat.public_history()})
         if path == "/api/courses":
@@ -281,6 +287,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(result, 400 if not result.get("ok") else 200)
         if path == "/api/chat/reset":
             return self._json(ai_chat.reset_thread())
+        if path == "/api/ai/profile/reset":
+            ai_profile.reset_profile()
+            cleared_evidence = ai_evidence.clear_evidence()
+            cleared_memories = ai_memory.clear_memories()
+            return self._json({
+                "ok": True,
+                "cleared_evidence": cleared_evidence,
+                "cleared_memories": cleared_memories,
+            })
         if path == "/api/courses/import":
             name = str(body.get("name") or "")
             payload = str(body.get("data") or "")

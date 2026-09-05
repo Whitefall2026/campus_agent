@@ -276,6 +276,7 @@ async function sendChatText(text) {
   renderChatLog();
   await refreshAi().catch(() => {});
   await refresh().catch(() => {});
+  await loadAiYou().catch(() => {});
 }
 
 async function loadChatHistory() {
@@ -1043,6 +1044,65 @@ $("#courseFile").addEventListener("change", (e) => {
   if (file) uploadCourseFile(file);
 });
 
+/* ================= AI 画像展示（Phase 1） ================= */
+const AI_YOU_DIMS = [
+  { key: "energy", label: "精力" },
+  { key: "task_load", label: "事务负载" },
+  { key: "external_pressure", label: "外部压力" },
+];
+const AI_YOU_LEVEL = { low: "低", medium: "中", high: "高", unknown: "了解中" };
+
+function aiYouDimText(state) {
+  return AI_YOU_DIMS.map((d) =>
+    `${d.label} ${AI_YOU_LEVEL[state[d.key]] || "—"}`).join(" · ");
+}
+
+function renderAiYou(s) {
+  const state = s.state || {};
+  const bar = $("#aiYouBar");
+  const hasProfile = s.updated_at || s.evidence_count || s.memory_count;
+  if (hasProfile) {
+    bar.classList.remove("hidden");
+    bar.innerHTML =
+      `🤖 当前画像：${esc(aiYouDimText(state))}` +
+      ` ｜ 对话证据 ${s.evidence_count || 0} 条 · 长期记忆 ${s.memory_count || 0} 条`;
+  } else {
+    bar.classList.add("hidden");
+  }
+
+  const card = $("#aiYouCard");
+  card.classList.remove("hidden");
+  const body = $("#aiYouBody");
+  const known = AI_YOU_DIMS.filter((d) => state[d.key] && state[d.key] !== "unknown");
+  body.innerHTML = `
+    <div class="ai-you-chips">
+      ${AI_YOU_DIMS.map((d) => `
+        <span class="ai-you-chip">${d.label}：<b>${esc(AI_YOU_LEVEL[state[d.key]] || "—")}</b></span>`).join("")}
+      <span class="ai-you-chip">置信度：<b>${Math.round((state.confidence || 0) * 100)}%</b></span>
+    </div>
+    <div class="ai-you-note">${
+      known.length
+        ? `AI 对你的当前状态有初步理解（最近更新 ${s.updated_at ? esc(s.updated_at.slice(0, 16).replace("T", " ")) : "—"}）；画像将随对话与反馈持续演化。`
+        : `AI 还在通过对话慢慢了解你：已收集 ${s.evidence_count || 0} 条观察、${s.memory_count || 0} 条长期记忆。所有数据只保存在本机，可随时重置。`
+    }</div>`;
+}
+
+async function loadAiYou() {
+  try {
+    const s = await api("/api/ai/profile");
+    renderAiYou(s);
+  } catch (_) { /* 静默 */ }
+}
+
+$("#profileResetBtn").addEventListener("click", async () => {
+  if (!confirm("重置 AI 画像将清空状态、长期记忆和已收集的观察证据；不会影响你的日程、待办与聊天记录。确认重置？")) return;
+  try {
+    await api("/api/ai/profile/reset", { method: "POST", body: {} });
+    await loadAiYou();
+    alert("已重置 AI 画像");
+  } catch (err) { alert(err.message); }
+});
+
 /* 初始化 */
 async function init() {
   if (!location.hash) history.replaceState(null, "", "#/input");
@@ -1052,6 +1112,7 @@ async function init() {
   await refreshAi();
   await loadChatHistory();
   await loadCourseSummary();
+  await loadAiYou();
   setInterval(() => { refreshWx(); refreshAi(); }, 4000);
   setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 8000);
 }

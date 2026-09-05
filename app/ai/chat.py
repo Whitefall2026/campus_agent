@@ -18,6 +18,7 @@ import time
 from datetime import datetime, timedelta
 
 from app.ai import gateway as ai_gateway
+from app.ai import evidence as ai_evidence
 from app.core import kinds
 from app.core.extractor import parse_text
 from app.core.scheduler import slot_conflicts
@@ -321,6 +322,7 @@ def chat_turn(text: str) -> dict:
     with _LOCK:
         thread = _load_messages()
         thread.append({"role": "user", "content": text, "ts": _now_iso()})
+    ai_evidence.add_evidence("chat", text, {"kind": "user_message"})
 
     reply = ""
     items = []
