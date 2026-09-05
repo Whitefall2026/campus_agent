@@ -188,7 +188,8 @@ class Handler(BaseHTTPRequestHandler):
         guide = ai_planner.guide_day_order(todos, day.isoformat())
         if guide.get("order"):
             plan0 = plan_engine.plan_day(
-                todos, day=day, candidate_order=guide["order"])
+                todos, day=day, candidate_order=guide["order"],
+                ai_placements=guide.get("placements") or None)
             plan0["meta"]["ai_guided"] = True
             if guide.get("note"):
                 plan0["meta"]["ai_note"] = guide["note"]

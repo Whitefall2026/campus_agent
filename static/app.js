@@ -1239,7 +1239,7 @@ function entryHTML(e, day, warns) {
   <div class="plan-entry ${hardToday || (dd && dd.cls === "dl-hard") ? "ddl-hard" : (dd ? "ddl-soft" : "")} ${risk ? "risk-shake" : ""}">
     <div class="entry-time">${esc(e.start)}–${esc(e.end)}</div>
     <div class="entry-body">
-      <div class="entry-title">${esc(e.title)}${adapt ? `<span class="tag-adapt">⚡适配</span>` : ""}
+      <div class="entry-title">${esc(e.title)}${e.ai ? `<span class="badge" style="--c:#6366f1">🤖 AI 时段</span>` : ""}${adapt ? `<span class="tag-adapt">⚡适配</span>` : ""}
         <span class="badge" style="--c:${hardToday ? "#e5484d" : "#f59e0b"}">${hardToday ? "硬线·今日截止" : (dd ? dd.text + "截止" : "待办")}</span>
       </div>
       <div class="entry-meta">

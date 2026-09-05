@@ -163,6 +163,46 @@ def _task_key(t: dict) -> tuple:
             str(t.get("created_at") or ""))
 
 
+def _carve_runs(runs: list[dict], start: int, end: int) -> list:
+    """从空闲块中挖掉 [start,end)，返回新的空闲块列表。"""
+    out = []
+    for r in runs:
+        if end <= r["start"] or start >= r["end"]:
+            out.append(dict(r))
+            continue
+        if r["start"] < start:
+            out.append(dict(r, end=start))
+        if end < r["end"]:
+            out.append(dict(r, start=end))
+    for r in out:
+        r["points"] = energy_mod.block_points(
+            r["start"], r["end"] - r["start"])
+    return out
+
+
+def _entry_for(task: dict, start_min: int, dur_min: int,
+               y: float, prof: dict, ai: bool = False) -> dict:
+    x = int(task.get("energy_cost") or 1)
+    end_min = start_min + dur_min
+    return {
+        "task_id": task.get("id"),
+        "title": task.get("title"),
+        "deliverable": task.get("deliverable"),
+        "parent_id": task.get("parent_id"),
+        "deadline": task.get("deadline"),
+        "deadline_time": task.get("deadline_time"),
+        "deadline_type": task.get("deadline_type"),
+        "energy_cost": x,
+        "duration_min": dur_min,
+        "start": fields.min_to_hm(start_min),
+        "end": fields.min_to_hm(end_min),
+        "coefficient": energy_mod.coefficient_at(start_min / 60.0, prof),
+        "slot_points": round(y, 2),
+        "tolerance": x > y,
+        "ai": ai,
+    }
+
+
 # ---------------------------------------------------------------------------
 # 主调度
 # ---------------------------------------------------------------------------
@@ -173,6 +213,7 @@ def plan_day(
     include_courses: bool = True,
     seed: int | None = None,
     candidate_order: list | None = None,
+    ai_placements: list | None = None,
 ) -> dict:
     """为某天生成完整规划方案（纯函数，不落库）。
 
@@ -199,7 +240,49 @@ def plan_day(
 
     entries, warnings = [], []
     rest_marks = []
-    remain = list(cands)
+    ai_done = set()
+
+    def build_entry(task, cursor, dur, y, ai=False):
+        return _entry_for(task, cursor, dur, y, prof, ai=ai)
+
+    # —— AI 提议的固定时段优先落位（引擎校验，不合法则留给贪心） ——
+    if ai_placements:
+        by_id = {str(c["id"]): c for c in cands}
+        for ap in ai_placements:
+            if not isinstance(ap, dict):
+                continue
+            tid = str(ap.get("task_id") or "")
+            task = by_id.get(tid)
+            start_min = fields.hm_to_min(str(ap.get("start") or ""))
+            if task is None or tid in ai_done or start_min is None:
+                continue
+            dur = int(task.get("duration_min") or 60)
+            end_min = start_min + dur
+            run = next(
+                (r for r in runs if r["start"] <= start_min and end_min <= r["end"]),
+                None,
+            )
+            if run is None:
+                continue
+            limit = _deadline_limit_min(task, day)
+            if limit is not None and end_min > limit:
+                continue
+            y = energy_mod.block_points(start_min, dur, prof)
+            x = int(task.get("energy_cost") or 1)
+            if x > y * TOLERANCE:
+                continue
+            entries.append(build_entry(task, start_min, dur, y, ai=True))
+            if x > y:
+                warnings.append({
+                    "task_id": task.get("id"),
+                    "title": task.get("title"),
+                    "level": "tolerance",
+                    "copy": TOLERANCE_COPY.format(cost=x, title=task.get("title")),
+                })
+            runs = _carve_runs(runs, start_min, end_min)
+            ai_done.add(tid)
+
+    remain = [c for c in cands if str(c["id"]) not in ai_done]
 
     # —— 贪心放置 ——
     for run in runs:
@@ -232,22 +315,7 @@ def plan_day(
             idx, task, cursor, dur, y = placed
             x = int(task.get("energy_cost") or 1)
             end_min = cursor + dur
-            entries.append({
-                "task_id": task.get("id"),
-                "title": task.get("title"),
-                "deliverable": task.get("deliverable"),
-                "parent_id": task.get("parent_id"),
-                "deadline": task.get("deadline"),
-                "deadline_time": task.get("deadline_time"),
-                "deadline_type": task.get("deadline_type"),
-                "energy_cost": x,
-                "duration_min": dur,
-                "start": fields.min_to_hm(cursor),
-                "end": fields.min_to_hm(end_min),
-                "coefficient": energy_mod.coefficient_at(cursor / 60.0, prof),
-                "slot_points": round(y, 2),
-                "tolerance": x > y,
-            })
+            entries.append(build_entry(task, cursor, dur, y))
             if x > y:
                 warnings.append({
                     "task_id": task.get("id"),
@@ -351,6 +419,7 @@ def plan_day(
         "tolerance": TOLERANCE,
         "candidates": len(cands),
         "planned": len(entries),
+        "ai_placed": len(ai_done),
         "rest": len(rests),
         "load_high": load_high,
     }
