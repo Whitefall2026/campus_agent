@@ -1174,9 +1174,11 @@ function renderPlannerPage() {
     const warns = planWarnById();
     box.innerHTML = entries.map((e) => entryHTML(e, day, warns)).join("");
   }
-  $("#planHint").innerHTML = entries.length
+  const aiNote = (plan.meta && plan.meta.ai_note)
+    ? `<span style="margin-left:8px">🤖 ${esc(plan.meta.ai_note)}</span>` : "";
+  $("#planHint").innerHTML = (entries.length
     ? `${entries.length} 项待采纳 · 另有 ${(plan.tomorrow || []).length} 项明日优先`
-    : "暂无排程建议";
+    : "暂无排程建议") + aiNote;
 
   // ---- 预警（阻塞）与明日优先 ----
   const warnBox = $("#planWarnings");

@@ -185,7 +185,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _plan_payload(self, todos, day):
         """当日规划 + 风险评估 + 负载指标（plan/risk/shield 三合一）。"""
-        plan0 = plan_engine.plan_day(todos, day=day)
+        guide = ai_planner.guide_day_order(todos, day.isoformat())
+        if guide.get("order"):
+            plan0 = plan_engine.plan_day(
+                todos, day=day, candidate_order=guide["order"])
+            plan0["meta"]["ai_guided"] = True
+            if guide.get("note"):
+                plan0["meta"]["ai_note"] = guide["note"]
+        else:
+            plan0 = plan_engine.plan_day(todos, day=day)
         seed = day.year * 10000 + day.month * 100 + day.day
         plan = plan_risk.plan_with_risk(plan0, seed=seed)
         load = plan_shield.load_metrics(todos, day=day, plan=plan0)
