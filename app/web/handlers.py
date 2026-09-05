@@ -191,10 +191,26 @@ class Handler(BaseHTTPRequestHandler):
                 todos, day=day, candidate_order=guide["order"],
                 ai_placements=guide.get("placements") or None)
             plan0["meta"]["ai_guided"] = True
+            plan0["meta"]["ai_rounds"] = 1
             if guide.get("note"):
                 plan0["meta"]["ai_note"] = guide["note"]
             if guide.get("advice"):
                 plan0["meta"]["ai_advice"] = guide["advice"]
+            rejected = plan0.get("meta", {}).get("ai_rejected") or []
+            if rejected:
+                guide2 = ai_planner.guide_day_order(
+                    todos, day.isoformat(), rejections=rejected)
+                if guide2.get("placements") or guide2.get("order"):
+                    plan0 = plan_engine.plan_day(
+                        todos, day=day,
+                        candidate_order=guide2.get("order") or guide.get("order"),
+                        ai_placements=guide2.get("placements") or None)
+                    plan0["meta"]["ai_guided"] = True
+                    plan0["meta"]["ai_rounds"] = 2
+                    if guide2.get("note"):
+                        plan0["meta"]["ai_note"] = guide2["note"]
+                    if guide2.get("advice"):
+                        plan0["meta"]["ai_advice"] = guide2["advice"]
         else:
             plan0 = plan_engine.plan_day(todos, day=day)
         seed = day.year * 10000 + day.month * 100 + day.day

@@ -241,6 +241,7 @@ def plan_day(
     entries, warnings = [], []
     rest_marks = []
     ai_done = set()
+    ai_rejected = []
 
     def build_entry(task, cursor, dur, y, ai=False):
         return _entry_for(task, cursor, dur, y, prof, ai=ai)
@@ -254,7 +255,13 @@ def plan_day(
             tid = str(ap.get("task_id") or "")
             task = by_id.get(tid)
             start_min = fields.hm_to_min(str(ap.get("start") or ""))
-            if task is None or tid in ai_done or start_min is None:
+            if task is None:
+                ai_rejected.append({"task_id": tid, "reason": "引擎不认识该任务"})
+                continue
+            if tid in ai_done:
+                continue
+            if start_min is None:
+                ai_rejected.append({"task_id": tid, "reason": "开始时间格式不正确"})
                 continue
             dur = int(task.get("duration_min") or 60)
             end_min = start_min + dur
@@ -263,13 +270,25 @@ def plan_day(
                 None,
             )
             if run is None:
+                ai_rejected.append({
+                    "task_id": tid,
+                    "reason": "提议时段被占用或超出规划范围",
+                })
                 continue
             limit = _deadline_limit_min(task, day)
             if limit is not None and end_min > limit:
+                ai_rejected.append({
+                    "task_id": tid,
+                    "reason": "结束时间超过当天硬线截止",
+                })
                 continue
             y = energy_mod.block_points(start_min, dur, prof)
             x = int(task.get("energy_cost") or 1)
             if x > y * TOLERANCE:
+                ai_rejected.append({
+                    "task_id": tid,
+                    "reason": "该时段精力不足（任务需 {:.1f} 点，时段仅 {:.1f} 点）".format(x, y),
+                })
                 continue
             entries.append(build_entry(task, start_min, dur, y, ai=True))
             if x > y:
@@ -420,6 +439,7 @@ def plan_day(
         "candidates": len(cands),
         "planned": len(entries),
         "ai_placed": len(ai_done),
+        "ai_rejected": ai_rejected,
         "rest": len(rests),
         "load_high": load_high,
     }

@@ -354,7 +354,8 @@ GUIDE_DAY_SYSTEM = """你是「校园管家」的智能调度决策者。
 """
 
 
-def guide_day_order(todos: list, day_iso: str) -> dict:
+def guide_day_order(todos: list, day_iso: str,
+                    rejections: list | None = None) -> dict:
     """让 AI 决定某天的任务推进顺序；AI 不可用时返回空引导。"""
     from app.planner import planner as engine_mod
 
@@ -423,8 +424,20 @@ def guide_day_order(todos: list, day_iso: str) -> dict:
     context.append("当天空闲时段：" + ("、".join(window_lines) or "无"))
     user = (
         "候选任务：\n{lines}\n\n{ctx}\n\n"
+        "{rej}"
         "请按系统规则输出 order 与 note。"
-    ).format(lines="\n".join(lines), ctx="\n".join(context))
+    ).format(
+        lines="\n".join(lines),
+        ctx="\n".join(context),
+        rej="".join(
+            "被引擎拒绝的上一轮提议：{id}：{why}。请换一个可行时段，"
+            "或考虑降低完成标准/拆解后再排。\n".format(
+                id=str(r.get("task_id") or ""),
+                why=str(r.get("reason") or ""),
+            )
+            for r in (rejections or [])
+        ),
+    )
     try:
         content = ai_gateway.chat_completion(cfg, [
             {"role": "system", "content": GUIDE_DAY_SYSTEM},
