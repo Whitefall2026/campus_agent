@@ -312,6 +312,11 @@ def _chat_completion(cfg: dict, messages: list) -> str:
         raise AiGatewayError("AI 接口响应缺少 choices[0].message.content")
 
 
+def chat_completion(cfg: dict, messages: list) -> str:
+    """Gateway 公开入口：把多轮对话消息发给当前配置的服务商。"""
+    return _chat_completion(cfg, messages)
+
+
 SYSTEM_PROMPT = """你是“校园管家”的日程提取助手。微信群里经常发“长通知”，
 一条消息里可能包含多日、多时段的若干条日程，你必须逐条完整提取——宁可多列，
 不可漏项；没有任何日程时才返回空数组。
@@ -698,7 +703,7 @@ def prune_expired_pending(data_dir: str | None = None) -> list:
         return visible
 
 
-def make_ai_todo(entry: dict) -> dict:
+def make_ai_todo(entry: dict, source: str = "wechat_ai") -> dict:
     """把待采纳条目转成 todos.json 里的完整 todo。"""
     fields = {k: entry.get("fields", {}).get(k) for k in ALLOWED_FIELDS}
     raw = str(entry.get("raw") or "")
@@ -712,7 +717,7 @@ def make_ai_todo(entry: dict) -> dict:
         "id": uuid.uuid4().hex[:10],
         "status": "pending",
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "source": "wechat_ai",
+        "source": source,
         "wx_chat": str(entry.get("chat_username") or ""),
         "wx_chat_name": str(entry.get("chat_display") or entry.get("chat_username") or ""),
         "wx_sender": str(entry.get("sender") or ""),

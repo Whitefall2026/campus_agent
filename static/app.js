@@ -25,17 +25,16 @@ const KIND = {
   todo: { label: "待办", color: "#b45309", icon: "✅", cls: "kind-todo" },
 };
 
-const PAGES = ["input", "schedule", "todos"];
+const PAGES = ["input", "schedule", "todos", "mine"];
 const state = {
   data: null,
   page: "input",
   day: null,
   todoFilter: "open",
-  previewKind: null,
-  preview: null,
   suggestionsById: {},
   editId: null,
   editMode: null, // edit | new | plan
+  chat: { messages: [], sending: false },
 };
 
 /* ---------------- 基础工具 ---------------- */
@@ -95,6 +94,8 @@ function timeRange(t) {
 function sourceBadge(t) {
   if (t.source === "wechat_ai") return badge("🤖 微信AI", "#7c3aed");
   if (t.source === "wechat") return badge("📲 微信", "#0ea5e9");
+  if (t.source === "chat_ai") return badge("💬 AI 对话", "#6366f1");
+  if (t.source === "chat_rule") return badge("🧭 对话识别", "#0891b2");
   return "";
 }
 
@@ -137,6 +138,7 @@ function showPage() {
   });
   if (state.page === "schedule") renderSchedulePage();
   if (state.page === "todos") renderTodosPage();
+  if (state.page === "mine") { refreshWx(); refreshAi(); }
 }
 
 window.addEventListener("hashchange", showPage);
@@ -156,101 +158,171 @@ async function refresh() {
   }
 }
 
-/* ================= 输入页 ================= */
-/* ---- 自然语言预览 ---- */
-function resetPreview() {
-  state.preview = null;
-  state.previewKind = null;
-  $("#preview").classList.add("hidden");
-  document.querySelectorAll("#pvKindSeg .seg-btn").forEach((b) => b.classList.remove("active-kind"));
+/* ================= AI 对话（第一页主入口） ================= */
+function chatScrollBottom() {
+  const log = $("#chatLog");
+  log.scrollTop = log.scrollHeight;
 }
 
-function fmtWhenText(p) {
-  const parts = [];
-  if (p.date) parts.push(fmtDay(p.date) + (fmtWeekday(p.date) ? `（${fmtWeekday(p.date)}）` : ""));
-  if (p.time) parts.push(p.time + (p.end_time ? "–" + p.end_time : ""));
-  if (p.deadline) parts.push("截止 " + fmtDay(p.deadline) + (p.deadline_time ? " " + p.deadline_time : ""));
-  return parts.join(" · ");
+function chatPendingIds() {
+  return new Set((state.pending || []).map((p) => p.id));
 }
 
-function showPreview(res) {
-  const p = res.parsed;
-  state.preview = res;
-  state.previewKind = p.kind === "todo" ? "todo" : "schedule";
-  $("#preview").classList.remove("hidden");
-  $("#pvTitle").textContent = p.title;
-  $("#pvKindHint").textContent = `AI/规则分类建议：${KIND[state.previewKind].label}`;
-  const fields = [
-    ["日期", p.date ? fmtDay(p.date) : "—"],
-    ["时间", p.time ? timeRange(p) : "—"],
-    ["地点", p.location || "—"],
-    ["截止", p.deadline ? fmtDay(p.deadline) + (p.deadline_time ? " " + p.deadline_time : "") : "—"],
-  ];
-  $("#pvGrid").innerHTML = fields.map(([k, v]) => `
-    <div class="pv-field"><span class="pv-key">${k}</span><span class="pv-val">${esc(v)}</span></div>`).join("")
-    + `<div class="pv-field"><span class="pv-key">分类</span><span class="pv-val">${catOf(p).icon} ${catOf(p).label}</span></div>`
-    + `<div class="pv-field"><span class="pv-key">优先级</span><span class="pv-val">${p.priority === "high" ? "高" : p.priority === "low" ? "低" : "中"}</span></div>`;
-  $("#pvTokens").innerHTML = p.tokens && p.tokens.length
-    ? "已识别：" + p.tokens.map((t) => `<span class="token">${esc(t)}</span>`).join("")
+function chatItemStatus(it) {
+  const done = (label) => ({ done: true, label });
+  if (it.outcome === "rejected") return done("已忽略");
+  if (it.outcome === "accepted:schedule") return done("✅ 已采纳到日程");
+  if (it.outcome === "accepted:todo") return done("✅ 已采纳到待办");
+  if (!chatPendingIds().has(it.id)) return done("已处理");
+  return null;
+}
+
+function chatItemHTML(it) {
+  const f = it.fields || {};
+  const kind = f.kind === "todo" ? "todo"
+    : (f.deadline || f.deadline_time) && f.kind !== "schedule" ? "todo"
+      : "schedule";
+  const k = KIND[kind];
+  const method = it.method === "rule-fallback" ? "🧭 规则识别" : "🤖 AI 识别";
+  const when = fmtAiWhen(f) || "未识别到明确时间";
+  const status = chatItemStatus(it);
+  const conflicts = (it.conflicts || []).map((c) =>
+    `<div class="chat-conflict"><span class="dot conflict"></span><span>${esc(c)}</span></div>`).join("");
+  const actions = status
+    ? `<div class="chat-item-done">${esc(status.label)}</div>`
+    : `<div class="ai-actions">
+        <button class="small ok-schedule" data-chat-id="${esc(it.id)}" data-chat-act="accept" data-chat-kind="schedule">🗓️ 采纳到日程</button>
+        <button class="small ok-todo" data-chat-id="${esc(it.id)}" data-chat-act="accept" data-chat-kind="todo">✅ 采纳到待办</button>
+        <button class="ghost small" data-chat-id="${esc(it.id)}" data-chat-act="reject">忽略</button>
+      </div>`;
+  return `
+    <div class="chat-item">
+      <div class="ai-item-head">
+        <span class="ai-title">${esc(f.title || "未命名事项")}</span>
+        <span class="badge ${k.cls}">${k.icon} 建议${k.label}</span>
+        <span class="badge" style="--c:#7c3aed">${method}</span>
+      </div>
+      <div class="ai-when">${esc(when)}</div>
+      ${f.location ? `<div class="ai-when">📍 ${esc(f.location)}</div>` : ""}
+      ${it.reason ? `<div class="ai-reason">${esc(it.reason)}</div>` : ""}
+      ${conflicts}
+      ${actions}
+    </div>`;
+}
+
+function chatMsgHTML(m) {
+  if (m.role === "user") {
+    return `<div class="chat-msg user"><div class="chat-bubble">${esc(m.content)}</div></div>`;
+  }
+  const meta = m.meta || {};
+  const cards = (m.items || []).map(chatItemHTML).join("");
+  const metaLine = meta.label
+    ? `<div class="chat-meta">${esc(meta.label)}</div>`
     : "";
-  $("#pvSlot").innerHTML = res.suggestion
-    ? `💡 建议安排：${fmtDay(res.suggestion.date)}（${fmtWeekday(res.suggestion.date)}）${res.suggestion.time}–${res.suggestion.end_time}`
-    : fmtWhenText(p)
-      ? "✅ 时间/截止已明确"
-      : "🗂️ 未识别到明确时间，可按“待办”收录";
-  const warn = $("#pvWarn");
-  if (res.clashes && res.clashes.length) {
-    warn.classList.remove("hidden");
-    warn.innerHTML = res.clashes.map((m) =>
-      `<div class="conflict-item"><span class="dot conflict"></span><span>${esc(m)}</span></div>`).join("");
-  } else {
-    warn.classList.add("hidden");
-  }
-  syncKindSeg();
+  return `
+    <div class="chat-msg ai">
+      <div class="chat-bubble">${esc(m.content)}</div>
+      ${cards ? `<div class="chat-cards">${cards}</div>` : ""}
+      ${metaLine}
+    </div>`;
 }
 
-function syncKindSeg() {
-  document.querySelectorAll("#pvKindSeg .seg-btn").forEach((b) => {
-    b.classList.toggle("active-kind", b.dataset.kind === state.previewKind);
-  });
-  if (state.previewKind) {
-    $("#pvKindHint").textContent = `你选择采纳到「${KIND[state.previewKind].label}」`;
+function renderChatLog() {
+  const log = $("#chatLog");
+  const stickToBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+  const msgs = state.chat.messages || [];
+  if (!msgs.length) {
+    log.innerHTML = '<div class="chat-empty">把安排直接说给我，我会一边回应一边记下来，放进“待你采纳”等你确认。</div>';
+    return;
   }
+  log.innerHTML = msgs.map(chatMsgHTML).join("");
+  if (stickToBottom) chatScrollBottom();
 }
 
-$("#pvKindSeg").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-kind]");
+function autosizeChatInput() {
+  const el = $("#chatInput");
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 150) + "px";
+}
+
+async function sendChatText(text) {
+  text = (text || "").trim();
+  if (!text || state.chat.sending) return;
+  state.chat.sending = true;
+  $("#chatSendBtn").disabled = true;
+  state.chat.messages.push({ role: "user", content: text, ts: new Date().toISOString() });
+  const log = $("#chatLog");
+  log.insertAdjacentHTML("beforeend",
+    '<div class="chat-msg ai"><div class="chat-bubble chat-thinking">正在思考…</div></div>');
+  chatScrollBottom();
+  try {
+    const res = await api("/api/chat", { method: "POST", body: { text } });
+    state.chat.messages.push({
+      role: "assistant",
+      content: res.reply,
+      items: res.items || [],
+      meta: res.meta || {},
+    });
+  } catch (err) {
+    state.chat.messages.push({
+      role: "assistant",
+      content: "出错了：" + err.message,
+      items: [],
+      meta: { label: "本地错误" },
+    });
+  }
+  state.chat.sending = false;
+  $("#chatSendBtn").disabled = false;
+  renderChatLog();
+  await refreshAi().catch(() => {});
+  await refresh().catch(() => {});
+}
+
+async function loadChatHistory() {
+  try {
+    const res = await api("/api/chat/history");
+    state.chat.messages = res.messages || [];
+    renderChatLog();
+  } catch (_) { /* 服务未就绪时静默 */ }
+}
+
+$("#chatSendBtn").addEventListener("click", () => {
+  const el = $("#chatInput");
+  const text = el.value;
+  el.value = "";
+  autosizeChatInput();
+  sendChatText(text);
+});
+$("#chatInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    const el = $("#chatInput");
+    const text = el.value;
+    el.value = "";
+    autosizeChatInput();
+    sendChatText(text);
+  }
+});
+$("#chatInput").addEventListener("input", autosizeChatInput);
+$("#chatResetBtn").addEventListener("click", async () => {
+  if (!confirm("清空当前对话记录？不会影响待采纳与已保存的事项。")) return;
+  try {
+    await api("/api/chat/reset", { method: "POST", body: {} });
+    state.chat.messages = [];
+    renderChatLog();
+  } catch (err) { alert(err.message); }
+});
+$("#chatLog").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-chat-id]");
   if (!btn) return;
-  state.previewKind = btn.dataset.kind;
-  syncKindSeg();
-});
-
-$("#parseBtn").addEventListener("click", async () => {
-  const text = $("#input").value.trim();
-  if (!text) return;
-  try {
-    showPreview(await api("/api/parse", { method: "POST", body: { text } }));
-  } catch (err) { alert(err.message); }
-});
-
-$("#confirmBtn").addEventListener("click", async () => {
-  const text = $("#input").value.trim();
-  if (!text || !state.preview) return;
-  try {
-    const kind = state.previewKind || "schedule";
-    const res = await api("/api/todos", { method: "POST", body: { text, kind } });
-    state.data = res.state;
-    $("#input").value = "";
-    resetPreview();
-    await refresh();
-    alert(`已采纳到${KIND[kind].label}`);
-  } catch (err) { alert(err.message); }
-});
-
-$("#pvCancelBtn").addEventListener("click", resetPreview);
-$("#resetBtn").addEventListener("click", () => {
-  $("#input").value = "";
-  resetPreview();
+  const id = btn.dataset.chatId;
+  const act = btn.dataset.chatAct;
+  const kind = btn.dataset.chatKind;
+  if (act === "accept") {
+    const label = kind === "todo" ? "待办" : "日程";
+    if (!confirm(`确认把这条识别结果采纳到“${label}”？`)) return;
+  }
+  await aiAction(act, id, kind);
 });
 
 /* ---- 微信自动提取 ---- */
@@ -342,11 +414,14 @@ const AI_PRESETS = {
 
 function aiCfgPayload() {
   const provider = $("#aiProvider").value;
+  const minLen = parseInt($("#aiMinLen").value, 10);
   const payload = {
     enabled: $("#aiEnabled").checked,
     provider,
     model: $("#aiModel").value.trim(),
     api_key: $("#aiKey").value.trim(),
+    min_len: Number.isFinite(minLen) && minLen >= 0 ? minLen : 10,
+    require_time_word: $("#aiRequireTimeWord").checked,
   };
   if (provider === "custom") payload.base_url = $("#aiBaseUrl").value.trim();
   return payload;
@@ -401,11 +476,15 @@ function renderAi(cfg) {
     ? `● 已启用：${esc(cfg.model)} · 自动区分日程 / 待办`
     : cfg.enabled
       ? "○ 已启用，但配置不完整（需要模型 + API Key）"
-      : "○ 未启用（启用后微信消息将先进入下面的待采纳区）";
+      : "○ 未启用（启用后微信消息将先进入「对话」页的待采纳区）";
   $("#aiKey").placeholder = cfg.has_key ? "已保存 Key，留空表示不修改" : "粘贴 API Key（仅保存在本机）";
   if (!state.aiDirty) {
     if (document.activeElement !== $("#aiModel")) $("#aiModel").value = cfg.model || "";
     if (document.activeElement !== $("#aiKey")) $("#aiKey").value = "";
+    if (document.activeElement !== $("#aiMinLen")) $("#aiMinLen").value = cfg.min_len;
+    if (document.activeElement !== $("#aiRequireTimeWord")) {
+      $("#aiRequireTimeWord").checked = !!cfg.require_time_word;
+    }
     if (document.activeElement !== $("#aiProvider")) {
       $("#aiProvider").value = cfg.provider || "openai";
       syncAiBaseRow();
@@ -418,7 +497,7 @@ function renderAi(cfg) {
   }
   if (!state.aiDirty) {
     $("#aiMeta").textContent =
-      `预筛：消息需 ≥ ${cfg.min_len} 字且含时间/地点/安排线索；AI 会区分“日程”和“待办”。`;
+      `预筛：少于 ${cfg.min_len} 字${cfg.require_time_word ? "或无时间 / 地点 / 安排线索" : ""}的消息不送 AI；AI 会区分“日程”和“待办”。`;
   }
 }
 
@@ -431,11 +510,12 @@ $("#aiProvider").addEventListener("change", () => {
   }
   scheduleAiSave();
 });
-["aiEnabled", "aiModel", "aiBaseUrl", "aiKey"].forEach((id) => {
+["aiEnabled", "aiModel", "aiBaseUrl", "aiKey", "aiMinLen"].forEach((id) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("input", scheduleAiSave);
 });
 document.getElementById("aiEnabled").addEventListener("change", scheduleAiSave);
+document.getElementById("aiRequireTimeWord").addEventListener("change", scheduleAiSave);
 
 function fmtAiWhen(f) {
   const parts = [];
@@ -458,6 +538,7 @@ function renderAiPending(list) {
   const box = $("#aiPendingList");
   if (!items.length) {
     box.innerHTML = '<div class="wx-empty">暂无待采纳事项。启用 AI 后，微信消息通过预筛会出现在这里，你可选择“采纳到日程”或“采纳到待办”。</div>';
+    if ((state.chat.messages || []).length) renderChatLog();
     return;
   }
   box.innerHTML = items.map((p) => {
@@ -487,6 +568,7 @@ function renderAiPending(list) {
       </div>
     </div>`;
   }).join("");
+  if ((state.chat.messages || []).length) renderChatLog();
 }
 
 async function aiAction(act, id, kind) {
@@ -498,6 +580,7 @@ async function aiAction(act, id, kind) {
     if (res.state) { state.data = res.state; renderHeaderStats(); }
     await refreshAi();
     await refresh();
+    await loadChatHistory();
   } catch (err) { alert(err.message); }
 }
 
@@ -831,7 +914,7 @@ document.addEventListener("click", async (e) => {
 $("#samples").innerHTML = SAMPLES.map((s) => `<button class="chip">${esc(s)}</button>`).join("");
 $("#samples").addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
-  if (chip) { $("#input").value = chip.textContent; $("#input").focus(); }
+  if (chip) sendChatText(chip.textContent);
 });
 
 $("#seedBtn").addEventListener("click", async () => {
@@ -896,7 +979,8 @@ async function init() {
   showPage();
   await refresh().catch(() => {});
   refreshWx();
-  refreshAi();
+  await refreshAi();
+  await loadChatHistory();
   setInterval(() => { refreshWx(); refreshAi(); }, 4000);
   setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 8000);
 }

@@ -60,6 +60,7 @@ main { max-width: 1240px; margin: 0 auto; padding: 22px; }
 .page-head h1 { font-size: 22px; }
 .page-sub { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
 .input-grid { display: grid; grid-template-columns: minmax(360px, 5fr) minmax(380px, 4fr); gap: 18px; align-items: start; }
+.mine-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
 .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
 /* ---------- 卡片 ---------- */
@@ -71,6 +72,15 @@ main { max-width: 1240px; margin: 0 auto; padding: 22px; }
 .card-head h2 { font-size: 15px; font-weight: 700; }
 .hint { font-size: 12px; color: var(--ink-2); }
 .pipeline-card { border-top: 3px solid var(--accent); }
+
+/* ---------- “我的”页 ---------- */
+.about-card { margin-top: 18px; }
+.about-card .card-head { margin-bottom: 8px; }
+.about-text { color: var(--ink-2); font-size: 12.5px; line-height: 1.75; max-width: 760px; }
+.about-text code {
+  background: #eef2ff; color: var(--accent); padding: 1px 6px;
+  border-radius: 6px; font-size: 12px;
+}
 
 /* ---------- 按钮 ---------- */
 button { font: inherit; cursor: pointer; border: none; border-radius: 10px; }
@@ -111,6 +121,52 @@ textarea:focus {
 .actions { display: flex; gap: 10px; margin-top: 12px; }
 .samples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .sample-note { font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+
+/* ---------- AI 对话 ---------- */
+.chat-card { display: flex; flex-direction: column; min-height: calc(100vh - 250px); }
+.chat-log {
+  flex: 1; min-height: 340px; max-height: 62vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 4px 2px 10px; margin-bottom: 8px;
+}
+.chat-empty {
+  color: var(--ink-2); font-size: 13px; text-align: center;
+  padding: 56px 18px; line-height: 1.8;
+}
+.chat-msg { display: flex; flex-direction: column; min-width: 0; }
+.chat-msg.user { align-items: flex-end; }
+.chat-bubble {
+  max-width: 84%; padding: 9px 13px; border-radius: 14px;
+  font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere;
+  box-shadow: 0 2px 8px rgba(29, 36, 51, 0.05);
+}
+.chat-msg.ai .chat-bubble {
+  background: #f1f4fb; color: var(--ink);
+  border-top-left-radius: 4px; align-self: flex-start;
+}
+.chat-msg.user .chat-bubble {
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  color: #fff; border-bottom-right-radius: 4px;
+}
+.chat-thinking { color: var(--ink-2); font-style: italic; }
+.chat-cards { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.chat-item {
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; background: #fff;
+}
+.chat-conflict { display: flex; gap: 8px; color: var(--danger); font-size: 12px; margin: 2px 0 6px; }
+.chat-item-done {
+  color: var(--ink-2); font-size: 12.5px; background: #f1f4fb;
+  border-radius: 8px; padding: 7px 10px; margin-top: 6px;
+}
+.chat-meta { font-size: 11px; color: var(--ink-2); margin-top: 5px; }
+.chat-box { display: flex; gap: 8px; align-items: flex-end; }
+.chat-box textarea {
+  flex: 1; min-height: 46px; max-height: 150px; margin: 0; resize: none;
+}
+.chat-box button { height: 46px; white-space: nowrap; }
+.chat-samples { margin-top: 12px; }
+.chat-samples .samples { margin-top: 6px; }
 
 /* ---------- 识别预览 ---------- */
 .pv-title { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
@@ -263,13 +319,19 @@ textarea:focus {
 .ai-off { background: #f1f4fb; color: var(--ink-2); border: 1px solid var(--line); }
 .ai-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .ai-row label { width: 70px; flex: none; color: var(--ink-2); font-size: 12.5px; }
-.ai-row input[type="text"], .ai-row input[type="password"], .ai-row select {
+.ai-row input[type="text"], .ai-row input[type="password"], .ai-row input[type="number"], .ai-row select {
   flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 9px;
   padding: 7px 10px; font: inherit; color: var(--ink); background: #fafbfe; outline: none;
 }
 .ai-row input:focus, .ai-row select:focus { border-color: var(--accent); }
 .ai-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+.ai-row .ai-opt { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ai-row .ai-opt input[type="checkbox"] { width: 15px; height: 15px; flex: none; margin: 0; }
 .ai-grid { margin-bottom: 4px; }
+.ai-sep {
+  font-size: 12px; font-weight: 700; color: var(--ink-2); letter-spacing: 0.5px;
+  margin: 6px 0 9px; padding-top: 10px; border-top: 1px dashed var(--line);
+}
 
 .ai-item { border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; margin-bottom: 10px; }
 .ai-item:last-child { margin-bottom: 0; }
@@ -322,7 +384,7 @@ textarea:focus {
 footer { text-align: center; color: var(--ink-2); font-size: 12px; padding: 16px 20px 26px; }
 
 @media (max-width: 980px) {
-  .input-grid { grid-template-columns: 1fr; }
+  .input-grid, .mine-grid { grid-template-columns: 1fr; }
   .topbar { flex-wrap: wrap; }
   .stats { justify-content: flex-start; order: 3; width: 100%; }
 }

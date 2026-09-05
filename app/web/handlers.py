@@ -24,6 +24,7 @@ from app.core.scheduler import build_state, slot_conflicts, suggest_slot
 from app.core.storage import load_todos, save_todos
 from app.core import kinds
 from app.ai import gateway as ai_gateway
+from app.ai import chat as ai_chat
 from app.wechat.bridge import BRIDGE as WX_BRIDGE
 from app.paths import STATIC_DIR
 
@@ -134,6 +135,8 @@ class Handler(BaseHTTPRequestHandler):
             pending = ai_gateway.prune_expired_pending()
             pending.reverse()
             return self._json({"ok": True, "pending": pending})
+        if path == "/api/chat/history":
+            return self._json({"ok": True, "messages": ai_chat.public_history()})
         self._serve_static(path)
 
     def do_POST(self):
@@ -269,6 +272,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "reply": reply})
             except ai_gateway.AiGatewayError as exc:
                 return self._json({"ok": False, "error": str(exc)})
+        if path == "/api/chat":
+            result = ai_chat.chat_turn(str(body.get("text") or ""))
+            return self._json(result, 400 if not result.get("ok") else 200)
+        if path == "/api/chat/reset":
+            return self._json(ai_chat.reset_thread())
         m = re.fullmatch(r"/api/ai/pending/([^/]+)/(accept|reject)", urlparse(self.path).path)
         if m:
             item_id = m.group(1)
@@ -279,6 +287,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "待采纳事项不存在、已处理或已过期"}, 404)
             if action == "reject":
                 ai_gateway.remove_pending(item_id)
+                ai_chat.mark_item_outcome(item_id, "rejected")
                 return self._json({"ok": True, "state": self._state()})
             # accept：按用户选择写入日程或待办
             todos = load_todos()
@@ -291,9 +300,9 @@ class Handler(BaseHTTPRequestHandler):
                 and str(t.get("title") or "").strip() == title
                 for t in todos
             )
+            want = kinds.valid_kind(body.get("kind"))
             if not exists:
-                todo = ai_gateway.make_ai_todo(item)
-                want = kinds.valid_kind(body.get("kind"))
+                todo = ai_gateway.make_ai_todo(item, source=item.get("source", "wechat_ai"))
                 if want:
                     todo = kinds.normalize_item(
                         todo,
@@ -308,6 +317,12 @@ class Handler(BaseHTTPRequestHandler):
                 todos.append(todo)
                 save_todos(todos)
             ai_gateway.remove_pending(item_id)
+            accepted_kind = (
+                want
+                or kinds.valid_kind((item.get("fields") or {}).get("kind"))
+                or "todo"
+            )
+            ai_chat.mark_item_outcome(item_id, "accepted:" + accepted_kind)
             return self._json({"ok": True, "state": self._state()})
         self._json({"ok": False, "error": "not found"}, 404)
 

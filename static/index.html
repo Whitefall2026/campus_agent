@@ -16,9 +16,10 @@
     </div>
   </div>
   <nav class="nav">
-    <a href="#/input" data-page="input" class="nav-item active">⌨️ 输入</a>
+    <a href="#/input" data-page="input" class="nav-item active">💬 对话</a>
     <a href="#/schedule" data-page="schedule" class="nav-item">🗓️ 日程</a>
     <a href="#/todos" data-page="todos" class="nav-item">✅ 待办</a>
+    <a href="#/mine" data-page="mine" class="nav-item">👤 我的</a>
   </nav>
   <div class="stats" id="stats"></div>
   <div class="toolbar">
@@ -27,115 +28,38 @@
 </header>
 
 <main>
-  <!-- ===================== 页面一：输入 ===================== -->
+  <!-- ===================== 页面一：AI 对话 ===================== -->
   <section class="page page-input" data-page="input">
     <div class="page-head">
-      <h1>输入与提取</h1>
-      <p class="page-sub">自然语言 / 微信自动提取 → AI 分析与分类 → 你确认采纳到“日程”或“待办”</p>
+      <h1>AI 助理</h1>
+      <p class="page-sub">把安排直接说给 AI：对话中自动提取日程 / 待办，结果先进“待你采纳”，确认后入库</p>
     </div>
 
     <div class="input-grid">
       <div class="col">
-        <!-- 自然语言输入 -->
-        <div class="card input-card">
+        <!-- AI 对话 -->
+        <div class="card chat-card">
           <div class="card-head">
-            <h2>说一件要处理的事</h2>
-            <span class="hint">支持自然语言，例如「周四晚7点社团例会」</span>
+            <h2>💬 和 AI 说安排</h2>
+            <span class="hint">会话保存在本机 · 识别结果进右侧待采纳</span>
+            <button id="chatResetBtn" class="ghost small">清空会话</button>
           </div>
-          <textarea id="input" rows="4" placeholder="例如：周四晚上7点参加社团例会，在二教401&#10;&#10;例如：数学作业下周一上午9点前提交"></textarea>
-          <div class="actions">
-            <button id="parseBtn" class="primary">⚡ 解析</button>
-            <button id="resetBtn" class="ghost">清空</button>
+          <div id="chatLog" class="chat-log">
+            <div class="chat-empty">把安排直接说给我，我会一边回应一边记下来，放进“待你采纳”等你确认。</div>
           </div>
-          <div class="samples" id="samples"></div>
-        </div>
-
-        <!-- 识别预览 + 采纳 -->
-        <div class="card preview hidden" id="preview">
-          <div class="card-head">
-            <h2>识别结果</h2>
-            <span class="hint" id="pvKindHint"></span>
+          <div class="chat-box">
+            <textarea id="chatInput" rows="1" placeholder="例如：周四晚上7点社团例会在二教401，帮我记一下"></textarea>
+            <button id="chatSendBtn" class="primary">发送</button>
           </div>
-          <div class="pv-title" id="pvTitle"></div>
-          <div class="pv-grid" id="pvGrid"></div>
-          <div class="pv-tokens" id="pvTokens"></div>
-          <div class="pv-slot" id="pvSlot"></div>
-          <div class="pv-warn hidden" id="pvWarn"></div>
-          <div class="seg" id="pvKindSeg">
-            <button class="seg-btn" data-kind="schedule">🗓️ 采纳到日程</button>
-            <button class="seg-btn" data-kind="todo">✅ 采纳到待办</button>
+          <div class="chat-samples">
+            <div class="sample-note">试试这样说：</div>
+            <div class="samples" id="samples"></div>
           </div>
-          <div class="actions">
-            <button id="confirmBtn" class="primary">✔ 确认添加</button>
-            <button id="pvCancelBtn" class="ghost">取消</button>
-          </div>
-        </div>
-
-        <!-- 微信自动提取 -->
-        <div class="card" id="wechatCard">
-          <div class="card-head">
-            <h2>📲 微信自动提取</h2>
-            <span class="hint">读取 + 监听微信消息，自动提取日程 / 待办</span>
-          </div>
-          <div id="wxStatus" class="wx-status wx-off">● 未运行</div>
-          <div class="wx-targets">
-            <input id="wxChats" placeholder="文件传输助手（多个会话用逗号分隔）" spellcheck="false">
-            <button id="wxApplyBtn" class="ghost small">保存</button>
-          </div>
-          <label class="wx-opt"><input type="checkbox" id="wxAll"> 监听所有会话</label>
-          <div class="wx-actions">
-            <button id="wxStartBtn" class="ghost small">连接</button>
-            <button id="wxScanBtn" class="ghost small">立即扫描</button>
-            <button id="wxStopBtn" class="ghost small danger-text">断开</button>
-          </div>
-          <div class="wx-meta" id="wxMeta"></div>
-          <div id="wxLog" class="wx-log"></div>
         </div>
       </div>
 
       <div class="col">
-        <!-- AI 分析（含采纳，与自动提取组成一个系统） -->
-        <div class="card pipeline-card" id="aiCard">
-          <div class="card-head">
-            <h2>🤖 AI 日程 / 待办分析</h2>
-            <span class="hint">微信消息 → 预筛 → AI 提取 → 采纳入库</span>
-          </div>
-          <div id="aiStatus" class="ai-status ai-off">○ 未启用</div>
-          <div class="ai-row">
-            <label for="aiEnabled">启用 AI</label>
-            <input type="checkbox" id="aiEnabled">
-          </div>
-          <div class="ai-grid">
-            <div class="ai-row">
-              <label for="aiProvider">服务商</label>
-              <select id="aiProvider">
-                <option value="openai">OpenAI</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="moonshot">Moonshot (Kimi)</option>
-                <option value="custom">自定义</option>
-              </select>
-            </div>
-            <div class="ai-row">
-              <label for="aiModel">模型</label>
-              <input id="aiModel" placeholder="deepseek-chat / …" spellcheck="false">
-            </div>
-            <div class="ai-row hidden" id="aiBaseRow">
-              <label for="aiBaseUrl">接口地址</label>
-              <input id="aiBaseUrl" placeholder="https://api.openai.com/v1" spellcheck="false">
-            </div>
-            <div class="ai-row">
-              <label for="aiKey">API Key</label>
-              <input type="password" id="aiKey" autocomplete="off" placeholder="仅保存在本机">
-            </div>
-          </div>
-          <div class="wx-actions">
-            <button id="aiSaveBtn" class="primary small">保存</button>
-            <button id="aiTestBtn" class="ghost small">测试连接</button>
-          </div>
-          <div class="wx-meta" id="aiMeta"></div>
-        </div>
-
-        <!-- 待采纳（日程 / 待办分流） -->
+        <!-- 待你采纳（微信 / AI 提取结果分流） -->
         <div class="card pipeline-card" id="aiPendingCard">
           <div class="card-head">
             <h2>📥 待你采纳</h2>
@@ -193,6 +117,104 @@
       <button id="clearTodoBtn" class="ghost small danger-text">清空待办</button>
     </div>
     <div id="todoList" class="todo-list"></div>
+  </section>
+
+  <!-- ===================== 页面四：我的 ===================== -->
+  <section class="page page-mine hidden" data-page="mine">
+    <div class="page-head">
+      <h1>我的</h1>
+      <p class="page-sub">微信自动提取、AI 分析与预筛等设置都集中在这里，识别结果仍统一到“对话”页的“待你采纳”确认</p>
+    </div>
+
+    <div class="mine-grid">
+      <div class="col">
+        <!-- 微信自动提取设置 + 运行状态 -->
+        <div class="card" id="wechatCard">
+          <div class="card-head">
+            <h2>📲 微信自动提取</h2>
+            <span class="hint">读取 + 监听微信消息，自动提取日程 / 待办</span>
+          </div>
+          <div id="wxStatus" class="wx-status wx-off">● 未运行</div>
+          <div class="wx-targets">
+            <input id="wxChats" placeholder="文件传输助手（多个会话用逗号分隔）" spellcheck="false">
+            <button id="wxApplyBtn" class="ghost small">保存</button>
+          </div>
+          <label class="wx-opt"><input type="checkbox" id="wxAll"> 监听所有会话</label>
+          <div class="wx-actions">
+            <button id="wxStartBtn" class="ghost small">连接</button>
+            <button id="wxScanBtn" class="ghost small">立即扫描</button>
+            <button id="wxStopBtn" class="ghost small danger-text">断开</button>
+          </div>
+          <div class="wx-meta" id="wxMeta"></div>
+          <div id="wxLog" class="wx-log"></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <!-- AI 分析设置 -->
+        <div class="card pipeline-card" id="aiCard">
+          <div class="card-head">
+            <h2>🤖 AI 日程 / 待办分析</h2>
+            <span class="hint">微信消息 → 预筛 → AI 提取 → 待你采纳（对话页）</span>
+          </div>
+          <div id="aiStatus" class="ai-status ai-off">○ 未启用</div>
+          <div class="ai-row">
+            <label for="aiEnabled">启用 AI</label>
+            <input type="checkbox" id="aiEnabled">
+          </div>
+          <div class="ai-grid">
+            <div class="ai-row">
+              <label for="aiProvider">服务商</label>
+              <select id="aiProvider">
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="moonshot">Moonshot (Kimi)</option>
+                <option value="custom">自定义</option>
+              </select>
+            </div>
+            <div class="ai-row">
+              <label for="aiModel">模型</label>
+              <input id="aiModel" placeholder="deepseek-chat / …" spellcheck="false">
+            </div>
+            <div class="ai-row hidden" id="aiBaseRow">
+              <label for="aiBaseUrl">接口地址</label>
+              <input id="aiBaseUrl" placeholder="https://api.openai.com/v1" spellcheck="false">
+            </div>
+            <div class="ai-row">
+              <label for="aiKey">API Key</label>
+              <input type="password" id="aiKey" autocomplete="off" placeholder="仅保存在本机">
+            </div>
+          </div>
+          <div class="ai-sep">预筛规则（不满足则不调用 AI）</div>
+          <div class="ai-grid">
+            <div class="ai-row">
+              <label for="aiMinLen">最短字数</label>
+              <input type="number" id="aiMinLen" min="0" max="200" title="少于该字数的消息不送 AI">
+            </div>
+            <div class="ai-row">
+              <label>预筛条件</label>
+              <label class="ai-opt"><input type="checkbox" id="aiRequireTimeWord"> 需含时间 / 地点 / 安排线索</label>
+            </div>
+          </div>
+          <div class="wx-actions">
+            <button id="aiSaveBtn" class="primary small">保存</button>
+            <button id="aiTestBtn" class="ghost small">测试连接</button>
+          </div>
+          <div class="wx-meta" id="aiMeta"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card about-card">
+      <div class="card-head">
+        <h2>🗂️ 数据与隐私</h2>
+        <span class="hint">本地存储</span>
+      </div>
+      <p class="about-text">
+        日程与待办保存在 <code>data/todos.json</code>；AI 配置、待采纳队列与监听会话同样只存在本机。
+        API Key 不会上传到校园管家服务，仅在启用后发送给你选择的 AI 服务商用于调用。
+      </p>
+    </div>
   </section>
 </main>
 
