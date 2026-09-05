@@ -1087,6 +1087,15 @@ const DDL_LABEL = {
   soft: { text: "软线", cls: "dl-soft", icon: "🟡" },
 };
 
+function setPlannerBusy(busy) {
+  ["planPrev", "planNext", "planToday", "planPick",
+   "planRecomputeBtn", "planApplyAllBtn"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = busy;
+  });
+  if (busy) $("#planHint").textContent = "🤖 AI 正在结合你的画像与精力排期，稍等…";
+}
+
 async function loadPlanner(force) {
   const day = state.planDay || todayISO();
   state.planDay = day;
@@ -1095,6 +1104,7 @@ async function loadPlanner(force) {
     renderPlannerPage();
     return;
   }
+  setPlannerBusy(true);
   try {
     const [planRes, energyRes] = await Promise.all([
       api(`/api/plan?date=${day}`),
@@ -1107,6 +1117,8 @@ async function loadPlanner(force) {
   } catch (err) {
     console.error("loadPlanner failed", err);
     $("#planHint").textContent = "加载失败：" + err.message;
+  } finally {
+    setPlannerBusy(false);
   }
 }
 

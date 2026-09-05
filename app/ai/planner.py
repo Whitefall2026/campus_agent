@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from datetime import date, datetime, timedelta
 
 from app.ai import gateway as ai_gateway
@@ -29,6 +30,8 @@ from app.paths import DATA_DIR
 PLAN_DAYS = 14
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
+GUIDE_TTL = 25          # AI 引导结果缓存秒数（同一日期翻回/刷新秒出）
+_GUIDE_CACHE = {}
 
 PLAN_SYSTEM_PROMPT = """你是「校园管家」的规划助手。用户有一批还没有排期的待办，
 你要把它们安排进未来两周时间轴的空档里，像真人助理一样考虑优先级、截止时间和节奏。
@@ -363,14 +366,25 @@ def guide_day_order(todos: list, day_iso: str,
         day = date.fromisoformat(str(day_iso or "")[:10])
     except ValueError:
         return {"order": [], "note": "", "advice": [], "placements": []}
+    iso = day.isoformat()
+    if not rejections:
+        try:
+            todos_mtime = os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
+        except OSError:
+            todos_mtime = 0
+        hit = _GUIDE_CACHE.get((iso, todos_mtime))
+        if hit and time.time() - hit[0] < GUIDE_TTL:
+            return {k: list(v) if isinstance(v, list) else v
+                    for k, v in hit[1].items()}
     cands = engine_mod.candidate_tasks(todos, day)
     if not cands:
         return {"order": [], "note": "", "advice": [], "placements": []}
     cands.sort(key=engine_mod._task_key)
-    iso = day.isoformat()
     cfg = ai_gateway.load_config()
     if not ai_gateway.is_ready(cfg):
         return {"order": None, "note": "", "advice": [], "placements": []}
+    cfg = dict(cfg)
+    cfg["timeout"] = min(max(int(cfg.get("timeout") or 15), 5), 15)
 
     forced = [
         c for c in cands
@@ -477,8 +491,19 @@ def guide_day_order(todos: list, day_iso: str,
         if cid not in seen:
             final.append(cid)
             seen.add(cid)
-    return {"order": final, "note": note, "advice": advice,
-            "placements": placements}
+    result = {"order": final, "note": note, "advice": advice,
+              "placements": placements}
+    if not rejections:
+        try:
+            todos_mtime = os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
+        except OSError:
+            todos_mtime = 0
+        _GUIDE_CACHE[(iso, todos_mtime)] = (time.time(), result)
+        if len(_GUIDE_CACHE) > 40:
+            old = sorted(_GUIDE_CACHE.items(), key=lambda kv: kv[1][0])[:20]
+            for k, _v in old:
+                _GUIDE_CACHE.pop(k, None)
+    return result
 
 
 def _hour_bucket(time_s: str) -> str:
