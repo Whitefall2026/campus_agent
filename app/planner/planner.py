@@ -219,6 +219,7 @@ def plan_day(
     seed: int | None = None,
     candidate_order: list | None = None,
     ai_placements: list | None = None,
+    candidate_ids: list | None = None,
 ) -> dict:
     """为某天生成完整规划方案（纯函数，不落库）。
 
@@ -230,7 +231,18 @@ def plan_day(
     iso = day.isoformat()
     prof = profile or energy_mod.default_profile()
     runs = free_runs(todos, day, include_courses=include_courses)
-    cands = [fields.normalize_task(t) for t in candidate_tasks(todos, day)]
+    if candidate_ids:
+        idset = {str(x) for x in candidate_ids}
+        raw = [
+            t for t in todos
+            if str(t.get("id")) in idset
+            and kinds.valid_kind(t.get("kind")) == kinds.KIND_TODO
+            and not t.get("date") and not t.get("time")
+            and t.get("status") != "done"
+        ]
+        cands = [fields.normalize_task(t) for t in raw]
+    else:
+        cands = [fields.normalize_task(t) for t in candidate_tasks(todos, day)]
     cands.sort(key=_task_key)
     if candidate_order:
         by_id = {str(c.get("id")): c for c in cands}

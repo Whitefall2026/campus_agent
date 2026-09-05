@@ -358,7 +358,8 @@ GUIDE_DAY_SYSTEM = """你是「校园管家」的智能调度决策者。
 
 
 def guide_day_order(todos: list, day_iso: str,
-                    rejections: list | None = None) -> dict:
+                    rejections: list | None = None,
+                    candidate_ids: list | None = None) -> dict:
     """让 AI 决定某天的任务推进顺序；AI 不可用时返回空引导。"""
     from app.planner import planner as engine_mod
 
@@ -376,7 +377,16 @@ def guide_day_order(todos: list, day_iso: str,
         if hit and time.time() - hit[0] < GUIDE_TTL:
             return {k: list(v) if isinstance(v, list) else v
                     for k, v in hit[1].items()}
-    cands = engine_mod.candidate_tasks(todos, day)
+    if candidate_ids:
+        idset = {str(x) for x in candidate_ids}
+        cands = [
+            t for t in todos
+            if str(t.get("id")) in idset
+            and t.get("status") != "done"
+            and not t.get("date") and not t.get("time")
+        ]
+    else:
+        cands = engine_mod.candidate_tasks(todos, day)
     if not cands:
         return {"order": [], "note": "", "advice": [], "placements": []}
     cands.sort(key=engine_mod._task_key)
@@ -486,11 +496,14 @@ def guide_day_order(todos: list, day_iso: str,
         if x not in seen:
             final.append(x)
             seen.add(x)
-    for c in cands:
-        cid = str(c["id"])
-        if cid not in seen:
-            final.append(cid)
-            seen.add(cid)
+    if not candidate_ids:
+        # 规则/引擎直连模式：确保所有候选都参与贪心；
+        # AI 模式则尊重 AI 的取舍——它没选的任务今天不排。
+        for c in cands:
+            cid = str(c["id"])
+            if cid not in seen:
+                final.append(cid)
+                seen.add(cid)
     result = {"order": final, "note": note, "advice": advice,
               "placements": placements}
     if not rejections:

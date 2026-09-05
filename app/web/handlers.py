@@ -204,11 +204,28 @@ class Handler(BaseHTTPRequestHandler):
         if not ai and hit and time.time() - hit[0] < _PLAN_TTL:
             return copy.deepcopy(hit[1])
         if ai:
-            guide = ai_planner.guide_day_order(todos, day.isoformat())
+            # AI 自己决定候选范围：所有未排期待办都交给它，
+            # 未来截止的任务也可以提前安排（引擎不再预过滤日期）。
+            cand_ids = []
+            for t in todos:
+                if t.get("status") == "done":
+                    continue
+                if kinds.valid_kind(t.get("kind")) != kinds.KIND_TODO:
+                    continue
+                if t.get("date") or t.get("time"):
+                    continue
+                offered = str(t.get("plan_offered_date") or "")
+                if offered and offered != iso:
+                    continue
+                cand_ids.append(str(t.get("id")))
+            guide = ai_planner.guide_day_order(
+                todos, day.isoformat(), candidate_ids=cand_ids or None)
+            engine_ids = guide.get("order") or cand_ids
             if guide.get("order"):
                 plan0 = plan_engine.plan_day(
                     todos, day=day, candidate_order=guide["order"],
-                    ai_placements=guide.get("placements") or None)
+                    ai_placements=guide.get("placements") or None,
+                    candidate_ids=engine_ids or None)
                 plan0["meta"]["ai_guided"] = True
                 plan0["meta"]["ai_rounds"] = 1
                 if guide.get("note"):
@@ -218,12 +235,15 @@ class Handler(BaseHTTPRequestHandler):
                 rejected = plan0.get("meta", {}).get("ai_rejected") or []
                 if rejected:
                     guide2 = ai_planner.guide_day_order(
-                        todos, day.isoformat(), rejections=rejected)
+                        todos, day.isoformat(), rejections=rejected,
+                        candidate_ids=cand_ids or None)
                     if guide2.get("placements") or guide2.get("order"):
+                        engine_ids2 = guide2.get("order") or engine_ids
                         plan0 = plan_engine.plan_day(
                             todos, day=day,
                             candidate_order=guide2.get("order") or guide.get("order"),
-                            ai_placements=guide2.get("placements") or None)
+                            ai_placements=guide2.get("placements") or None,
+                            candidate_ids=engine_ids2 or None)
                         plan0["meta"]["ai_guided"] = True
                         plan0["meta"]["ai_rounds"] = 2
                         if guide2.get("note"):
@@ -231,7 +251,8 @@ class Handler(BaseHTTPRequestHandler):
                         if guide2.get("advice"):
                             plan0["meta"]["ai_advice"] = guide2["advice"]
             else:
-                plan0 = plan_engine.plan_day(todos, day=day)
+                plan0 = plan_engine.plan_day(
+                    todos, day=day, candidate_ids=cand_ids or None)
         else:
             plan0 = plan_engine.plan_day(todos, day=day)
             plan0["meta"]["view_only"] = True
