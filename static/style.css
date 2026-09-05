@@ -541,3 +541,27 @@ footer { text-align: center; color: var(--ink-2); font-size: 12px; padding: 16px
 @media (max-width: 1080px) {
   .planner-grid { grid-template-columns: 1fr; }
 }
+
+/* ================= 拖拽（卡片 → 时段） ================= */
+.ev[draggable="true"], .todo-item[draggable="true"] {
+  cursor: grab;
+}
+.ev[draggable="true"]:active, .todo-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+.period-list {
+  min-height: 44px;
+  transition: background 0.15s ease, outline-color 0.15s ease;
+}
+.period-list.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
+  border-radius: 10px;
+  background: rgba(79, 110, 247, 0.06);
+}
+.drop-hint {
+  color: var(--ink-2);
+  font-size: 12px;
+  padding: 9px 4px;
+  opacity: 0.6;
+}

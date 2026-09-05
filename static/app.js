@@ -627,7 +627,7 @@ function eventHTML(t) {
       <button class="mini del" data-action="del" title="删除">✕</button>
     </span>`;
   return `
-  <div class="ev ${t.done ? "done" : ""} ${t.time ? "" : "all-day"}" data-id="${esc(t.id)}">
+  <div class="ev ${t.done ? "done" : ""} ${t.time ? "" : "all-day"}" data-id="${esc(t.id)}" ${t.course ? "" : `draggable="true" title="按住可拖到其他时段"`}>
     <span class="ev-title">${esc(t.title)}</span>
     ${meta ? `<span class="ev-meta">${meta}</span>` : ""}
     <span class="badge" style="--c:${c.color}">${c.icon} ${c.label}</span>
@@ -656,24 +656,25 @@ function renderSchedulePage() {
   }
 
   const allDay = items.filter((t) => !t.time);
-  if (!items.length) {
-    $("#scheduleTimeline").innerHTML = `
-      <div class="empty-day">
-        <div class="empty-icon">🗓️</div>
-        <p>${info.label} 还没有安排</p>
-        <button class="primary" data-action="add-day">＋ 添加安排</button>
-      </div>`;
-    return;
-  }
   const periodDef = [
     { key: "am", label: "☀️ 上午", min: "00:00", max: "12:00", def: "09:00" },
     { key: "pm", label: "🌤️ 下午", min: "12:00", max: "18:00", def: "14:00" },
     { key: "ev", label: "🌙 晚上", min: "18:00", max: "24:00", def: "19:30" },
   ];
   const inPeriod = (t, p) => t.time && t.time >= p.min && t.time < p.max;
+  const emptyDayMsg = !items.length
+    ? `<div class="empty-day">
+         <div class="empty-icon">🗓️</div>
+         <p>${info.label} 还没有安排 — 把待办卡片拖进下面的时段，即可排进这天</p>
+         <button class="primary" data-action="add-day">＋ 添加安排</button>
+       </div>`
+    : "";
+  // 三个时段块始终渲染：空时段也能作为拖拽落点
   const blocks = periodDef.map((p) => {
     const evs = items.filter((t) => inPeriod(t, p)).sort((a, b) => (a.time < b.time ? -1 : 1));
-    if (!evs.length) return "";
+    const body = evs.length
+      ? evs.map(eventHTML).join("")
+      : `<div class="drop-hint">空闲 · 可把卡片拖到这里</div>`;
     return `
       <div class="period-block">
         <div class="period-head">
@@ -682,18 +683,71 @@ function renderSchedulePage() {
           <button class="mini period-add" data-action="add-at" data-time="${p.def}"
                   title="在 ${p.label} 添加安排">＋</button>
         </div>
-        <div class="period-list">${evs.map(eventHTML).join("")}</div>
+        <div class="period-list" data-def="${p.def}">${body}</div>
       </div>`;
   }).join("");
   const allDayBlock = allDay.length
     ? `
       <div class="period-block">
         <div class="period-head"><span>📌 全天</span><span class="period-count">${allDay.length} 项</span></div>
-        <div class="period-list">${allDay.map(eventHTML).join("")}</div>
+        <div class="period-list" data-def="09:00">${allDay.map(eventHTML).join("")}</div>
       </div>`
     : "";
-  $("#scheduleTimeline").innerHTML = allDayBlock + blocks;
+  $("#scheduleTimeline").innerHTML = emptyDayMsg + allDayBlock + blocks;
 }
+
+/* ================= 拖拽调整（拖到其他时段 / 拖入某一天） ================= */
+function addMinTo(hm, mins) {
+  const [h, m] = String(hm).split(":").map(Number);
+  const total = ((h * 60 + m + mins) % (24 * 60) + 24 * 60) % (24 * 60);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(Math.floor(total / 60))}:${p(total % 60)}`;
+}
+
+document.addEventListener("dragstart", (e) => {
+  const card = e.target.closest(".ev, .todo-item");
+  if (!card || !card.dataset.id) return;
+  const t = findTodo(card.dataset.id);
+  if (!t || t.course || t.done) { e.preventDefault(); return; }
+  e.dataTransfer.setData("text/plain", card.dataset.id);
+  e.dataTransfer.effectAllowed = "move";
+});
+
+function dragZone(e) {
+  return e.target.closest(".period-list, #scheduleTimeline");
+}
+document.addEventListener("dragover", (e) => {
+  const zone = dragZone(e);
+  if (!zone) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  zone.classList.add("drag-over");
+});
+document.addEventListener("dragleave", (e) => {
+  const zone = dragZone(e);
+  if (zone) zone.classList.remove("drag-over");
+});
+document.addEventListener("drop", async (e) => {
+  const zone = dragZone(e);
+  if (!zone) return;
+  e.preventDefault();
+  zone.classList.remove("drag-over");
+  const id = e.dataTransfer.getData("text/plain");
+  if (!id) return;
+  const t = findTodo(id);
+  if (!t) return;
+  const dateISO = state.day || todayISO();
+  const newTime = zone.dataset.def || t.time || "09:00";
+  const dur = t.duration_min || 60;
+  const endTime = addMinTo(newTime, dur);
+  try {
+    const res = await api("/api/plan/move", {
+      method: "POST",
+      body: { id, date: dateISO, time: newTime, end_time: endTime },
+    });
+    await refresh();
+  } catch (err) { alert(err.message); }
+});
 
 $("#dayPrev").addEventListener("click", () => {
   state.day = addDays(state.day, -1);
@@ -733,7 +787,7 @@ function todoItemHTML(t) {
     t.deadline && t.deadline < (state.data ? state.data.today : "") && !t.done ? "（已逾期）" : "",
   ].filter(Boolean).join("　");
   return `
-  <div class="todo-item ${t.done ? "done" : ""} ${t.overdue ? "overdue" : ""}" data-id="${esc(t.id)}">
+  <div class="todo-item ${t.done ? "done" : ""} ${t.overdue ? "overdue" : ""}" data-id="${esc(t.id)}" ${t.done ? "" : `draggable="true" title="按住可拖到日程页的某个时段"`}>
     <div class="td-main">
       <div class="td-title">${esc(t.title)} <span class="tl-badges">${badges}</span></div>
       ${meta ? `<div class="td-meta">${meta}</div>` : ""}
