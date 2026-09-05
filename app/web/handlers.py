@@ -122,12 +122,17 @@ def make_todo_from_text(text: str, kind: str | None = None) -> dict | None:
     )
     if norm.get("kind") == kinds.KIND_SCHEDULE and not norm.get("date"):
         return None  # 日程必须能被放进某一天，否则交给待办
-    return {
+    return _finalize_todo({
         **norm,
         "id": uuid.uuid4().hex[:10],
         "status": "pending",
         "created_at": datetime.now().isoformat(timespec="seconds"),
-    }
+    })
+
+
+def _finalize_todo(todo: dict) -> dict:
+    """入库前补全规划默认字段（耗能/时长/硬软线/浮动天数），返回新 dict。"""
+    return plan_fields.normalize_task(todo)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -277,12 +282,12 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": False,
                     "error": "日程必须包含日期（请填写日期后再保存，或改选待办）",
                 }, 400)
-            todo = {
+            todo = _finalize_todo({
                 **norm,
                 "id": uuid.uuid4().hex[:10],
                 "status": "pending",
                 "created_at": datetime.now().isoformat(timespec="seconds"),
-            }
+            })
             todos.append(todo)
             save_todos(todos)
             return self._json({"ok": True, "todo": todo, "state": self._state()})
@@ -577,6 +582,7 @@ class Handler(BaseHTTPRequestHandler):
                             "ok": False,
                             "error": "该结果没有明确日期，无法采纳到日程；请采纳到待办，再到待办页手动规划到某一天",
                         }, 400)
+                todo = _finalize_todo(todo)
                 todos.append(todo)
                 save_todos(todos)
             ai_gateway.remove_pending(item_id)
@@ -621,11 +627,11 @@ class Handler(BaseHTTPRequestHandler):
             if k == "date" and not v:
                 todo["time"] = None
                 todo["end_time"] = None
-        todo = kinds.normalize_item(
+        todo = _finalize_todo(kinds.normalize_item(
             todo,
             kind=todo.get("kind"),
             raw=todo.get("raw") or todo.get("title") or "",
-        )
+        ))
         if todo.get("status") == "done" and not was_done:
             plan_risk.record_done(todo)
         save_todos(todos)
