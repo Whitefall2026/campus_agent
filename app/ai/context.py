@@ -35,6 +35,19 @@ def profile_summary() -> dict:
     """给前端展示的画像摘要（Phase 1：只展示，不注入推理）。"""
     profile = user_profile.load_profile()
     state = profile.get("state") or {}
+    if not profile.get("updated_at") or not state.get("updated_at") \
+            or all(v in (None, "", "unknown") for v in (
+                state.get("energy"), state.get("task_load"),
+                state.get("external_pressure"))):
+        derived = user_profile.derive_from_planner()
+        if derived:
+            user_evidence.add_evidence(
+                "planner",
+                "根据日程/课程/精力数据自动生成初始画像：" + derived.get("situation", ""),
+                {"kind": "cold_start"},
+            )
+            profile = user_profile.load_profile()
+            state = profile.get("state") or {}
     memories = user_memory.list_memories()
     return {
         "state": state,

@@ -14,10 +14,11 @@ import json
 import os
 import threading
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from app.paths import DATA_DIR
+from app.core.storage import load_todos
 
 Level = Literal["low", "medium", "high", "unknown"]
 
@@ -156,3 +157,120 @@ def state_history(limit: int = 500) -> list:
 
 def latest_state() -> dict:
     return dict(load_profile().get("state") or {})
+
+
+def derive_from_planner() -> dict | None:
+    """用能量引擎/日程数据冷启动画像，不依赖对话条数。
+
+    - 精力：当前时刻精力系数 + 近期轻松/吃力反馈；
+    - 事务负载：未完成待办数 + 未来 7 天课程/日程密度；
+    - 外部压力：未来 5 天内硬线截止/密集安排；
+    - 处境：自动生成一句话概况。
+    """
+    now = datetime.now()
+    todos = load_todos()
+    try:
+        from app.core import courses as course_mod
+        course_events = course_mod.term_events()
+    except Exception:
+        course_events = []
+
+    open_todos = [t for t in todos
+                  if t.get("status") != "done"
+                  and str(t.get("kind") or "") != "schedule"]
+    pending_count = len(open_todos)
+    today_iso = now.date().isoformat()
+
+    # ---- 精力：当前时刻系数 + 近期反馈 ----
+    hours = []
+    events = []
+    try:
+        with open(os.path.join(DATA_DIR, "planner_profile.json"), "r",
+                  encoding="utf-8") as f:
+            hours = (json.load(f) or {}).get("hours") or []
+    except (OSError, json.JSONDecodeError):
+        pass
+    try:
+        with open(os.path.join(DATA_DIR, "planner_events.json"), "r",
+                  encoding="utf-8") as f:
+            events = json.load(f) or []
+    except (OSError, json.JSONDecodeError):
+        pass
+    hour_coef = 0.5
+    if isinstance(hours, list) and len(hours) == 24 and all(
+        isinstance(v, (int, float)) for v in hours
+    ):
+        hour_coef = float(hours[now.hour])
+    recent = [e for e in events if isinstance(e, dict)][-200:]
+    tough = sum(1 for e in recent if e.get("rating") == "tough")
+    easy = sum(1 for e in recent if e.get("rating") == "easy")
+    if tough >= 3 and tough >= easy * 2:
+        energy = "low"
+    elif hour_coef < 0.4:
+        energy = "low"
+    elif hour_coef <= 0.9:
+        energy = "medium"
+    else:
+        energy = "high"
+
+    # ---- 事务负载 ----
+    next7 = (now.date() + timedelta(days=7)).isoformat()
+    load_events = sum(
+        1 for e in course_events
+        if e.get("date") and today_iso <= str(e["date"]) <= next7
+    )
+    if pending_count >= 7 or load_events >= 10:
+        task_load = "high"
+    elif pending_count >= 4 or load_events >= 6:
+        task_load = "medium"
+    else:
+        task_load = "low"
+
+    # ---- 外部压力：近 5 天硬线 / 密集截止 ----
+    next5 = (now.date() + timedelta(days=5)).isoformat()
+    hard = 0
+    upcoming = 0
+    for t in todos:
+        dl = str(t.get("deadline") or "")
+        if not dl or t.get("status") == "done":
+            continue
+        if today_iso <= dl <= next5:
+            if str(t.get("deadline_type") or "").lower() == "hard" \
+                    or not str(t.get("deadline_type") or ""):
+                hard += 1
+            else:
+                upcoming += 1
+    if hard >= 2 or (hard + upcoming) >= 4:
+        external_pressure = "high"
+    elif hard == 1 or upcoming >= 2:
+        external_pressure = "medium"
+    else:
+        external_pressure = "low"
+
+    situation_parts = []
+    if pending_count:
+        situation_parts.append(f"{pending_count} 项待办未完成")
+    if load_events:
+        situation_parts.append(f"未来一周约 {load_events} 次课程/日程")
+    if hard:
+        situation_parts.append(f"{hard} 项硬线截止在 5 天内")
+    situation = "；".join(situation_parts) if situation_parts else "暂无突出压力"
+    summary = "根据日程/课程与精力数据自动推导的初始画像。"
+    profile = load_profile()
+    if situation:
+        profile["situation"] = situation
+    profile["summary"] = summary
+    profile["preferences"] = profile.get("preferences") or {}
+    save_profile(profile)
+    update_state(UserState(
+        energy=energy,
+        task_load=task_load,
+        external_pressure=external_pressure,
+        confidence=0.55,
+        updated_at=now,
+    ))
+    return {
+        "state": latest_state(),
+        "situation": situation,
+        "summary": summary,
+    }
