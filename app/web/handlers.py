@@ -31,6 +31,7 @@ from app.ai import profile as ai_profile
 from app.ai import memory as ai_memory
 from app.ai import evidence as ai_evidence
 from app.ai import planner as ai_planner
+from app.ai import pressure as ai_pressure
 from app.wechat.bridge import BRIDGE as WX_BRIDGE
 from app.paths import DATA_DIR, STATIC_DIR
 from app.core import courses as course_mod
@@ -144,6 +145,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "pending": pending})
         if path == "/api/ai/profile":
             return self._json({"ok": True, **ai_context.profile_summary()})
+        if path == "/api/ai/today":
+            return self._json({"ok": True, **ai_pressure.today_brief(load_todos())})
         if path == "/api/chat/history":
             return self._json({"ok": True, "messages": ai_chat.public_history()})
         if path == "/api/courses":
@@ -297,6 +300,16 @@ class Handler(BaseHTTPRequestHandler):
                 "cleared_evidence": cleared_evidence,
                 "cleared_memories": cleared_memories,
             })
+        if path == "/api/ai/profile/state":
+            current = ai_profile.latest_state()
+            levels = {"low", "medium", "high", "unknown"}
+            energy = str(body.get("energy") or current.get("energy") or "unknown")
+            if energy not in levels:
+                return self._json({"ok": False, "error": "精力状态不正确"}, 400)
+            current["energy"] = energy
+            current["confidence"] = max(float(current.get("confidence") or 0), 0.6)
+            profile = ai_profile.update_state(current)
+            return self._json({"ok": True, "state": profile.get("state") or {}})
         if path == "/api/ai/plan":
             return self._json(ai_planner.plan_open_todos())
         if path == "/api/courses/import":

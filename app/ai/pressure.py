@@ -591,3 +591,65 @@ def calculate_pressure(
         "overdue_count": overdue_count,
         "schedule_count_7d": schedule_count_7d,
     }
+
+
+def today_brief(todos: list[dict] | None = None,
+                today: date | None = None,
+                now: datetime | None = None) -> dict:
+    """生成面向用户的「今天先做什么，还剩多少可自由安排时间」。
+
+    这是一个确定性的摘要：不把尚未确认的待办偷偷塞进日程，而是先把
+    必须完成的事说清楚，剩余空白仍然属于用户自己。
+    """
+    todos = todos or []
+    today = today or date.today()
+    now = now or datetime.now()
+    pressure = calculate_pressure(todos, today)
+    priorities = []
+    for todo in todos:
+        if _is_done(todo):
+            continue
+        deadline = _parse_date(todo.get("deadline"))
+        fixed_today = _has_fixed_time(todo) and _parse_date(todo.get("date")) == today
+        due_today = deadline == today
+        overdue = deadline is not None and deadline < today
+        if not (fixed_today or due_today or overdue):
+            continue
+        if overdue:
+            reason = "已逾期，先决定今天是否处理"
+        elif due_today:
+            reason = "今天截止，优先留出时间"
+        else:
+            reason = "今天已有固定安排"
+        priorities.append({
+            "id": todo.get("id"), "title": str(todo.get("title") or "未命名事项"),
+            "reason": reason, "deadline": todo.get("deadline"),
+            "time": todo.get("time"), "kind": todo.get("kind"),
+            "rank": 0 if overdue else 1 if due_today else 2,
+        })
+    priorities.sort(key=lambda x: (x["rank"], x.get("time") or "99:99", x["title"]))
+
+    # 仅估算今天 09:00–22:00 内、从此刻开始仍未被固定日程占用的分钟数。
+    day_start = datetime.combine(today, datetime.strptime("09:00", "%H:%M").time())
+    day_end = datetime.combine(today, datetime.strptime("22:00", "%H:%M").time())
+    cursor = max(day_start, now) if today == now.date() else day_start
+    occupied = 0
+    for todo in todos:
+        if _is_done(todo) or not _has_fixed_time(todo) or _parse_date(todo.get("date")) != today:
+            continue
+        start = _parse_datetime(todo.get("date"), todo.get("time"))
+        if start is None:
+            continue
+        end = start + timedelta(minutes=_duration_minutes(todo))
+        overlap_start, overlap_end = max(start, cursor), min(end, day_end)
+        if overlap_end > overlap_start:
+            occupied += int((overlap_end - overlap_start).total_seconds() // 60)
+    available = max(0, int((day_end - cursor).total_seconds() // 60) - occupied)
+    return {
+        "today": today.isoformat(), "pressure": pressure,
+        "free_minutes": available, "priority_items": priorities[:3],
+        "message": (
+            "先完成最重要的一件，剩下的时间由你自己决定。"
+            if priorities else "今天没有迫在眉睫的事项，留一点空白给自己。"
+        ),
+    }

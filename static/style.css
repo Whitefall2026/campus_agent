@@ -205,6 +205,19 @@ textarea:focus {
   flex: 1; min-height: 46px; max-height: 150px; margin: 0; resize: none;
 }
 .chat-box button { height: 46px; white-space: nowrap; }
+.today-compass { margin-bottom: 16px; border-color: #d8defe; background: linear-gradient(120deg, #fbfcff, #f3f6ff); }
+.today-compass .card-head { align-items: flex-start; }
+.today-compass h2 { margin-bottom: 3px; }
+.today-compass-body { display: grid; grid-template-columns: minmax(180px, .7fr) 2fr; gap: 18px; align-items: center; }
+.freedom-meter { display: flex; flex-direction: column; gap: 3px; padding: 13px 16px; border-radius: 12px; background: #fff; border: 1px solid #e1e6ff; }
+.freedom-meter b { font-size: 25px; color: var(--accent); letter-spacing: -.5px; }
+.freedom-meter span, .today-label { color: var(--ink-2); font-size: 12px; }
+.today-priority { min-width: 0; }
+.today-priority-item { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 13px; }
+.today-priority-item span { color: var(--ink-2); font-size: 12px; }
+.today-priority-empty { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+.energy-check { display: flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12px; flex-wrap: wrap; }
+.energy-check .selected { background: #e4e9ff; color: var(--accent); border-color: #aebdff; }
 .chat-samples { margin-top: 12px; }
 .chat-samples .samples { margin-top: 6px; }
 
@@ -440,4 +453,7 @@ footer { text-align: center; color: var(--ink-2); font-size: 12px; padding: 16px
   .input-grid, .mine-grid { grid-template-columns: 1fr; }
   .topbar { flex-wrap: wrap; }
   .stats { justify-content: flex-start; order: 3; width: 100%; }
+}
+@media (max-width: 620px) {
+  .today-compass-body { grid-template-columns: 1fr; gap: 10px; }
 }

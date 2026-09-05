@@ -159,6 +159,34 @@ async function refresh() {
   }
 }
 
+/* ---------------- 今日主动权：只提示，不替用户占满时间 ---------------- */
+function formatFreeTime(minutes) {
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  return h ? `${h} 小时${m ? " " + m + " 分" : ""}` : `${m} 分钟`;
+}
+
+function renderTodayCompass(data) {
+  $("#todayMessage").textContent = data.message || "今天的节奏，由你决定。";
+  $("#freeTime").textContent = formatFreeTime(Number(data.free_minutes || 0));
+  const items = data.priority_items || [];
+  $("#todayPriority").innerHTML = items.length
+    ? items.map((x) => `<div class="today-priority-item"><b>${esc(x.title)}</b><span>${esc(x.reason)}</span></div>`).join("")
+    : '<div class="today-priority-empty">没有必须立刻处理的事。</div>';
+}
+
+async function loadTodayCompass() {
+  try { renderTodayCompass(await api("/api/ai/today")); } catch (_) { /* 静默 */ }
+}
+
+document.querySelectorAll("[data-energy]").forEach((btn) => btn.addEventListener("click", async () => {
+  try {
+    const res = await api("/api/ai/profile/state", { method: "POST", body: { energy: btn.dataset.energy } });
+    document.querySelectorAll("[data-energy]").forEach((b) => b.classList.toggle("selected", b === btn));
+    await loadAiYou();
+    await loadTodayCompass();
+  } catch (err) { alert(err.message); }
+}));
+
 /* ================= AI 对话（第一页主入口） ================= */
 function chatScrollBottom() {
   const log = $("#chatLog");
@@ -1213,6 +1241,7 @@ async function init() {
   await loadChatHistory();
   await loadCourseSummary();
   await loadAiYou();
+  await loadTodayCompass();
   setInterval(() => { refreshWx(); refreshAi(); }, 4000);
   setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 8000);
 }
