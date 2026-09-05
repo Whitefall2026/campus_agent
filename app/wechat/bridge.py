@@ -4,7 +4,8 @@
 设计目标
 --------
 - 复用 wechatauto-replica 的「读取」(WeChatDB) 与「监听」(Listener) 能力；
-- 微信未登录/未运行时，桥接自动进入“等待登录”重试，不影响主服务；
+- 微信未登录/未运行时，桥接保持“未连接”并自动重试（以 Weixin.exe
+  进程存活为门槛，避免本地缓存密钥造成“假已连接”），不影响主服务；
 - 每个会话记录处理到哪一条消息（sort_seq 水位线），重启后不会漏消息，
   也不会把已加入的日程重复加入；
 - 只对「像日程」的文本消息做自动提取（含日期/时间/地点/截止/时长），
@@ -18,6 +19,7 @@ import importlib.util
 import json
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -102,6 +104,29 @@ CONFIG_KEYS = {
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _wechat_process_running() -> bool:
+    """微信桌面端（Weixin.exe）进程是否在运行。
+
+    wechatauto 只要本地有缓存的解密密钥，就能离线打开微信数据库；
+    若桥接仅以“数据库可读”判断连接，微信未登录时会误报“已连接”。
+    因此连接前与连接期间都以进程存在性作为“客户端在线”的门槛：
+    进程不在 = 一定未登录，保持未连接并自动重试。
+    """
+    if os.name != "nt":
+        return False
+    try:
+        r = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq Weixin.exe", "/NH"],
+            capture_output=True,
+            timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        # tasklist 在本地位码（GBK/UTF-8 等）可能不同，按字节匹配 ASCII 进程名最稳
+        return b"Weixin.exe" in (r.stdout or b"")
+    except Exception:
+        return False
 
 
 class WeChatBridge:
@@ -357,8 +382,9 @@ class WeChatBridge:
                 else:
                     self._housekeeping(tick)
             except Exception as exc:
-                self._set_error(str(exc) or repr(exc))
-                self._disconnect("连接异常，准备重试")
+                msg = str(exc) or repr(exc)
+                self._set_error(msg)
+                self._disconnect(f"微信未就绪：{msg[:80]}，自动重试中")
             # 未连接时每 10 秒重试一次，避免频繁扫微信进程内存
             self._wake.clear()
             self._wake.wait(1 if connected else 10)
@@ -371,6 +397,10 @@ class WeChatBridge:
             lst = self._listener
         if lst is None or not lst._thread or not lst._thread.is_alive():
             raise RuntimeError("监听线程意外退出")
+        # 微信退出/注销后数据库不再更新：断开并进入自动重试，
+        # 避免进程已消失仍显示“已连接”的假象。
+        if tick % 5 == 0 and not _wechat_process_running():
+            raise RuntimeError("微信进程已退出，请重新登录微信桌面版，将自动重连")
         now = time.time()
         # 每 ~10s 落盘一次水位线；监听过程中宕机最多重放 10s 消息（去重可兜底）
         if now - self._last_tick_persist >= 10:
@@ -405,9 +435,14 @@ class WeChatBridge:
             raise RuntimeError(
                 "未安装 wechatauto-replica（请先 pip install -e wechatauto-replica-main 或安装该包）"
             )
+        if not _wechat_process_running():
+            raise RuntimeError(
+                "未检测到微信进程（Weixin.exe）：请登录微信 4.x 桌面版并保持运行，"
+                "桥接会每 10 秒自动重试"
+            )
         from wechatauto.db import Listener, WeChatDB
 
-        db = WeChatDB()  # 微信未登录/未运行时这里会抛错，由外层进入等待重试
+        db = WeChatDB()  # 打开本地数据库；密钥缺失/无法解密时抛错，由外层进入等待重试
         info = db.get_self_info()
         account_user = (info.get("username") or "").strip()
         if account_user:
