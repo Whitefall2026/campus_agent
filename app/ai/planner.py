@@ -12,15 +12,19 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import date, datetime, timedelta
 
 from app.ai import gateway as ai_gateway
 from app.ai import profile as user_profile
+from app.ai import evidence as user_evidence
+from app.ai import memory as user_memory
 from app.core import kinds
 from app.core import courses as course_mod
 from app.core.scheduler import SUGGEST_SLOTS, end_time_of
 from app.core.storage import load_todos
+from app.paths import DATA_DIR
 
 PLAN_DAYS = 14
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -120,6 +124,11 @@ def _rule_choice(t, busy: dict, start_date: date) -> dict | None:
     if last_day < first_day:
         first_day = last_day
     now_hm = _now().strftime("%H:%M")
+    try:
+        dur = int(t.get("duration_min") or 60)
+        dur = max(15, dur)
+    except (TypeError, ValueError):
+        dur = 60
     span = (last_day - first_day).days
     for i in range(span + 1):
         d = first_day + timedelta(days=i)
@@ -128,7 +137,7 @@ def _rule_choice(t, busy: dict, start_date: date) -> dict | None:
         for slot in SUGGEST_SLOTS:
             if d == today and slot <= now_hm:
                 continue
-            end = end_time_of({"time": slot, "duration_min": 60})
+            end = end_time_of({"time": slot, "duration_min": dur})
             if end and not _clash(slot, end, intervals):
                 if deadline and iso <= deadline:
                     reason = f"截止日当天，安排最早的可用空档" if iso == deadline \
@@ -150,6 +159,7 @@ def _context_text(todos: list, busy: dict, state: dict) -> str:
             state_lines.append(f"{label}={v}")
     if state_lines:
         lines.append("用户状态：" + "、".join(state_lines))
+    lines.extend(_energy_context_lines())
     lines.append("\n待排期待办：")
     for t in todos:
         dl = t.get("deadline") or ""
@@ -163,6 +173,50 @@ def _context_text(todos: list, busy: dict, state: dict) -> str:
         if busy[iso]:
             lines.append(f"{iso}: " + ", ".join(f"{s}-{e}" for s, e in busy[iso]))
     return "\n".join(lines)
+
+
+def _energy_context_lines() -> list:
+    """读取队友规划引擎的精力曲线与反馈事件，作为 AI 排期的参考数据。
+
+    数据文件可能尚不存在（引擎未运行过），此时返回空列表即可。
+    """
+    out = []
+    profile_path = os.path.join(DATA_DIR, "planner_profile.json")
+    events_path = os.path.join(DATA_DIR, "planner_events.json")
+    try:
+        with open(profile_path, "r", encoding="utf-8") as f:
+            profile = json.load(f)
+        hours = profile.get("hours") if isinstance(profile, dict) else None
+        if isinstance(hours, list) and len(hours) == 24 and all(
+            isinstance(v, (int, float)) for v in hours
+        ):
+            peak = max(range(24), key=lambda i: hours[i])
+            if hours[peak] > 0:
+                out.append(
+                    "精力曲线：{} 点前后是高峰（系数 {:.2f}），"
+                    "8-10 点均值 {:.2f}，深夜不排。".format(
+                        peak, hours[peak],
+                        sum(hours[8:11]) / 3,
+                    )
+                )
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    try:
+        with open(events_path, "r", encoding="utf-8") as f:
+            events = json.load(f)
+        if isinstance(events, list) and events:
+            recent = events[-200:]
+            counts = {}
+            for ev in recent:
+                kind = str((ev or {}).get("type") or (ev or {}).get("kind") or "?")
+                counts[kind] = counts.get(kind, 0) + 1
+            total = sum(counts.values())
+            if total:
+                summary = "、".join(f"{k}×{n}" for k, n in sorted(counts.items()))
+                out.append(f"近期规划反馈事件共 {total} 条：{summary}。")
+    except (OSError, ValueError, TypeError):
+        pass
+    return out
 
 
 def _parse_ai_plan(content: str):
@@ -272,3 +326,77 @@ def plan_open_todos() -> dict:
     else:
         summary = f"按空闲时段与截止时间自动规划：{planned} 条可采纳。"
     return {"ok": True, "method": method, "summary": summary, "items": items}
+
+
+def _hour_bucket(time_s: str) -> str:
+    try:
+        h = int(str(time_s or "")[:2])
+    except (TypeError, ValueError):
+        return "unknown"
+    if 6 <= h < 12:
+        return "上午"
+    if 12 <= h < 18:
+        return "下午"
+    if 18 <= h < 24:
+        return "晚上"
+    return "unknown"
+
+
+def record_plan_feedback(action: str, items: list) -> dict:
+    """用户采纳/拒绝 AI 排期建议 → 写入画像偏好与长期记忆。
+
+    action: accept | reject
+    items: [{id, title, date, time, end_time}]
+    """
+    action = str(action or "").strip().lower()
+    if action not in ("accept", "reject"):
+        return {"ok": False, "error": "action 需为 accept 或 reject"}
+    items = [it for it in (items or []) if isinstance(it, dict)]
+    if not items:
+        return {"ok": False, "error": "缺少建议条目"}
+
+    profile = user_profile.load_profile()
+    prefs = profile.get("preferences") or {}
+    prefs = dict(prefs)
+    plan_pref = dict(prefs.get("planning") or {})
+    buckets = dict(plan_pref.get("buckets") or {})
+    plan_pref.setdefault("accepted", 0)
+    plan_pref.setdefault("rejected", 0)
+
+    lines = []
+    for it in items:
+        title = str(it.get("title") or "未命名待办")[:60]
+        when = " ".join(str(x) for x in (
+            it.get("date") or "", it.get("time") or ""
+        ) if x)
+        bucket = _hour_bucket(it.get("time"))
+        if action == "accept":
+            plan_pref["accepted"] = int(plan_pref["accepted"]) + 1
+            if bucket != "unknown":
+                buckets[bucket] = int(buckets.get(bucket, 0)) + 1
+            lines.append(f"采纳 AI 排期：{title} → {when}".strip())
+        else:
+            plan_pref["rejected"] = int(plan_pref["rejected"]) + 1
+            lines.append(f"拒绝 AI 排期建议：{title}（{when}）".strip())
+    plan_pref["buckets"] = buckets
+    prefs["planning"] = plan_pref
+    profile["preferences"] = prefs
+    user_profile.save_profile(profile)
+    for line in lines:
+        user_evidence.add_evidence(
+            "plan_" + action,
+            line,
+            {"kind": "plan_feedback"},
+        )
+
+    # 偏好收敛：采纳 ≥3 次且某时段明显占优时，写入长期记忆
+    accepted = int(plan_pref.get("accepted") or 0)
+    if accepted >= 3 and buckets:
+        top = max(buckets, key=lambda k: buckets[k])
+        if int(buckets[top]) >= 2 and buckets[top] == max(buckets.values()):
+            user_memory.add_memory(
+                "用户更倾向把任务安排在" + top,
+                importance=min(0.9, 0.45 + 0.08 * int(buckets[top])),
+                category="planning_preference",
+            )
+    return {"ok": True, "recorded": len(lines), "action": action}

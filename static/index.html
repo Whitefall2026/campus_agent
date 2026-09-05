@@ -19,6 +19,7 @@
     <a href="#/input" data-page="input" class="nav-item active">💬 对话</a>
     <a href="#/schedule" data-page="schedule" class="nav-item">🗓️ 日程</a>
     <a href="#/todos" data-page="todos" class="nav-item">✅ 待办</a>
+    <a href="#/planner" data-page="planner" class="nav-item">🧭 计划</a>
     <a href="#/mine" data-page="mine" class="nav-item">👤 我的</a>
   </nav>
   <div class="stats" id="stats"></div>
@@ -131,27 +132,67 @@
         <button class="chip" data-todo-filter="overdue">已逾期</button>
         <span class="todo-filter-info" id="todoFilterInfo"></span>
       </div>
-      <button id="aiPlanBtn" class="primary small">✨ AI 规划</button>
       <button id="addTodoBtn" class="primary small">＋ 添加待办</button>
       <button id="clearTodoBtn" class="ghost small danger-text">清空待办</button>
-    </div>
-
-    <div class="card plan-card hidden" id="planCard">
-      <div class="card-head">
-        <h2>✨ AI 排期建议</h2>
-        <span class="hint" id="planHint"></span>
-      </div>
-      <div id="planList"></div>
-      <div class="actions">
-        <button id="planApplyAllBtn" class="primary small">全部采纳</button>
-        <button id="planCloseBtn" class="ghost small">关闭</button>
-      </div>
     </div>
 
     <div id="todoList" class="todo-list"></div>
   </section>
 
-  <!-- ===================== 页面四：我的 ===================== -->
+  <!-- ===================== 页面四：计划（能量看板） ===================== -->
+  <section class="page page-planner hidden" data-page="planner">
+    <div class="page-head">
+      <h1>今日能量计划</h1>
+      <p class="page-sub">按你的精力曲线为待办排期：⚡容差适配、风险预判、软线顺延都先给你看，采纳后才写入日程</p>
+    </div>
+
+    <div class="schedule-toolbar">
+      <button id="planPrev" class="ghost">‹</button>
+      <input type="date" id="planPick">
+      <button id="planToday" class="ghost small">今天</button>
+      <button id="planNext" class="ghost">›</button>
+      <div class="day-title" id="planTitle"></div>
+      <div class="spacer"></div>
+      <button id="planRecomputeBtn" class="ghost small" title="重新计算这一天（会自动避开已采纳的排程）">↻ 重新规划</button>
+    </div>
+
+    <div class="planner-grid">
+      <div class="col rail">
+        <!-- 能量环 -->
+        <div class="card energy-card">
+          <div class="card-head">
+            <h2>⚡ 今日能量</h2>
+            <span class="hint" id="energyHint"></span>
+          </div>
+          <div class="ring-row">
+            <svg class="energy-ring" viewBox="0 0 120 120" width="132" height="132">
+              <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+              <circle class="ring-fg" id="ringFg" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <div class="ring-meta" id="energyMeta"></div>
+          </div>
+          <div class="curve-title">今日精力曲线（07–23 点）</div>
+          <div class="curve-strip" id="curveStrip"></div>
+        </div>
+      </div>
+
+      <div class="col main">
+        <div class="card plan-card">
+          <div class="card-head">
+            <h2>📋 排程建议</h2>
+            <span class="hint" id="planHint"></span>
+            <button id="planApplyAllBtn" class="primary small">一键采纳排程</button>
+          </div>
+          <div id="planWarnings" class="plan-warnings"></div>
+          <div id="planDeferrals" class="plan-deferrals"></div>
+          <div id="planEntries"></div>
+          <div id="planEmpty"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 页面五：我的 ===================== -->
   <section class="page page-mine hidden" data-page="mine">
     <div class="page-head">
       <h1>我的</h1>
@@ -304,9 +345,27 @@
           <option value="low">低</option>
         </select>
       </label>
+      <label class="edit-field"><span>截止类型</span>
+        <select id="edDdlType" title="硬线不可延期；软线可自动顺延 1~2 天">
+          <option value="">自动判断</option>
+          <option value="hard">硬线（不可延期）</option>
+          <option value="soft">软线（可顺延）</option>
+        </select>
+      </label>
+      <label class="edit-field"><span>预计耗能</span>
+        <select id="edEnergy" title="1≈半小时轻量 … 5≈2.5 小时高强度">
+          <option value="">自动估算</option>
+          <option value="1">1 · 轻量</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5 · 高强度</option>
+        </select>
+      </label>
+      <label class="edit-field full"><span>交付物（产出结果）</span><input id="edDeliverable" spellcheck="false" placeholder="例如：答辩用 15 页 PPT / 大纲一页"></label>
       <label class="edit-field"><span>日期</span><input type="date" id="edDate"></label>
-      <label class="edit-field"><span>开始时间</span><input type="time" id="edTime"></label>
-      <label class="edit-field"><span>结束时间</span><input type="time" id="edEndTime"></label>
+      <label class="edit-field sched-field"><span>开始时间</span><input type="time" id="edTime"></label>
+      <label class="edit-field sched-field"><span>结束时间</span><input type="time" id="edEndTime"></label>
       <label class="edit-field"><span>时长（分钟）</span><input type="number" min="0" id="edDuration" placeholder="留空默认 60"></label>
       <label class="edit-field"><span>地点</span><input id="edLocation" spellcheck="false"></label>
       <label class="edit-field"><span>截止日期</span><input type="date" id="edDeadline"></label>

@@ -329,6 +329,7 @@ textarea:focus {
   padding: 10px 13px; margin-bottom: 8px; background: #fafbfe;
 }
 .plan-item-main { flex: 1; min-width: 0; }
+.plan-ops { display: flex; gap: 6px; }
 .plan-title { font-weight: 600; font-size: 13.5px; }
 .plan-when { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
 .plan-reason { color: var(--ink-2); font-size: 12px; margin-top: 2px; }
@@ -454,6 +455,165 @@ footer { text-align: center; color: var(--ink-2); font-size: 12px; padding: 16px
   .topbar { flex-wrap: wrap; }
   .stats { justify-content: flex-start; order: 3; width: 100%; }
 }
+
+/* ================= 计划页（能量看板） ================= */
+.planner-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+.planner-grid .rail { display: flex; flex-direction: column; gap: 16px; }
+
+.energy-card .ring-row { display: flex; align-items: center; gap: 16px; padding: 6px 0 4px; }
+.energy-ring { display: block; }
+.energy-ring .ring-bg { fill: none; stroke: rgba(79,110,247,0.12); stroke-width: 11; }
+.energy-ring .ring-fg {
+  fill: none; stroke: #22c55e; stroke-width: 11; stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: center;
+  stroke-dasharray: 326.7; stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.6s ease, stroke 0.6s ease;
+}
+.ring-meta { font-size: 13px; color: var(--ink-2); line-height: 1.7; }
+.ring-meta b { color: var(--ink); font-size: 15px; }
+.curve-title { font-size: 12px; color: var(--ink-2); margin: 10px 0 6px; }
+.curve-strip { display: flex; gap: 2px; align-items: flex-end; height: 34px; }
+.curve-strip .cell {
+  flex: 1; min-width: 0; border-radius: 3px 3px 1px 1px; background: rgba(79,110,247,0.14);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.curve-strip .cell i { display: block; width: 100%; border-radius: 3px 3px 1px 1px; background: linear-gradient(180deg, #4f6ef7, #7b5cf0); }
+.curve-strip .cell.z { background: rgba(148,163,184,0.12); }
+.curve-strip .cell.z i { background: rgba(148,163,184,0.4); }
+
+/* 排程卡片 */
+.plan-card .card-head { flex-wrap: wrap; gap: 8px; }
+.plan-empty {
+  text-align: center; color: var(--ink-2); padding: 34px 10px; font-size: 14px;
+}
+.plan-entry {
+  display: flex; gap: 12px; align-items: flex-start;
+  border: 1px solid var(--line); border-left: 4px solid #94a3b8;
+  border-radius: 12px; padding: 10px 12px; margin: 8px 0; background: #fff;
+}
+.plan-entry.ddl-hard { border-left-color: #e5484d; }
+.plan-entry.ddl-soft { border-left-style: dashed; border-left-color: #f59e0b; }
+.plan-entry.done { opacity: 0.55; }
+.plan-entry .entry-time {
+  flex: none; width: 92px; font-variant-numeric: tabular-nums;
+  font-size: 13px; font-weight: 600; color: #3b4a8f; padding-top: 2px;
+}
+.plan-entry .entry-body { flex: 1; min-width: 0; }
+.plan-entry .entry-title { font-weight: 600; font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.plan-entry .entry-meta { font-size: 12px; color: var(--ink-2); margin-top: 3px; line-height: 1.6; }
+.plan-entry .entry-ops { display: flex; gap: 6px; align-items: center; flex: none; }
+.tag-adapt {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 11px;
+  background: #fffbeb; color: #b45309; border: 1px solid #fde68a;
+  border-radius: 999px; padding: 1px 7px;
+}
+.adapt-note {
+  background: #fffbeb; border: 1px dashed #fde68a; color: #92400e;
+  border-radius: 8px; font-size: 12px; line-height: 1.6; padding: 6px 9px; margin-top: 6px;
+}
+
+/* 完成概率条 */
+.prob-bar {
+  height: 6px; border-radius: 999px; background: rgba(148,163,184,0.22);
+  margin-top: 7px; overflow: hidden;
+}
+.prob-bar .fill { display: block; height: 100%; border-radius: 999px; transition: width 0.5s ease; }
+.prob-bar .fill.p-hi { background: #22c55e; }
+.prob-bar .fill.p-mid { background: #f59e0b; }
+.prob-bar .fill.p-low { background: #e5484d; }
+.prob-note { font-size: 11px; color: var(--ink-2); margin-top: 3px; display: flex; gap: 4px; align-items: center; }
+.prob-note.risk { color: #b91c1c; font-weight: 600; }
+
+/* 风险抖动 */
+@keyframes plan-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+.plan-entry.risk-shake { animation: plan-shake 0.5s ease-in-out 2; border-color: #fecaca; }
+@media (prefers-reduced-motion: reduce) {
+  .plan-entry.risk-shake { animation: none; }
+}
+
+/* ================= LLM 拆解面板 ================= */
+.sub-panel {
+  border: 1px dashed #c4b5fd;
+  background: #faf8ff;
+  border-radius: 10px;
+  padding: 9px 12px;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.sub-panel .sub-title { font-weight: 600; color: #5b21b6; margin-bottom: 6px; }
+.sub-panel .sub-loading, .sub-panel .sub-msg { color: var(--ink-2); padding: 4px 0; }
+.sub-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 3px 0; line-height: 1.5;
+}
+.sub-row .sub-idx {
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  background: #7c3aed; color: #fff; font-size: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.sub-row .sub-deliverable { color: var(--ink-2); }
+.sub-row .sub-when { color: var(--ink-2); font-size: 11px; }
+.sub-panel .sub-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* 预警 / 顺延 */
+.plan-warnings, .plan-deferrals { margin-bottom: 6px; }
+.warn-box, .defer-box {
+  border-radius: 12px; padding: 9px 12px; margin: 8px 0; font-size: 13px; line-height: 1.7;
+}
+.warn-box { background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d; }
+.defer-box { background: #fffbeb; border: 1px solid #fde68a; color: #713f12; }
+.defer-box .defer-copy { display: block; }
+.defer-actions { display: flex; gap: 8px; margin-top: 7px; }
+
+/* 明日优先区 */
+.tomorrow-title { font-size: 12px; color: var(--ink-2); margin: 10px 0 4px; font-weight: 600; }
+.tomorrow-chip {
+  display: inline-flex; align-items: center; gap: 6px; background: #f1f5f9;
+  border: 1px solid var(--line); color: var(--ink); border-radius: 999px;
+  font-size: 12px; padding: 3px 10px; margin: 3px 4px 0 0;
+}
+.tomorrow-chip .t-risk { color: #b91c1c; }
+
+/* 完成反馈 */
+.rate-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.rate-row span { font-size: 11px; color: var(--ink-2); }
+.rate-row button { font-size: 11px; padding: 2px 8px; }
+.rate-done { font-size: 11px; color: #059669; margin-left: 2px; }
+
+@media (max-width: 1080px) {
+  .planner-grid { grid-template-columns: 1fr; }
+}
+
+/* ================= 拖拽（卡片 → 时段） ================= */
+.ev[draggable="true"], .todo-item[draggable="true"] {
+  cursor: grab;
+}
+.ev[draggable="true"]:active, .todo-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+.period-list {
+  min-height: 44px;
+  transition: background 0.15s ease, outline-color 0.15s ease;
+}
+.period-list.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
+  border-radius: 10px;
+  background: rgba(79, 110, 247, 0.06);
+}
+.drop-hint {
+  color: var(--ink-2);
+  font-size: 12px;
+  padding: 9px 4px;
+  opacity: 0.6;
+}
+
 @media (max-width: 620px) {
   .today-compass-body { grid-template-columns: 1fr; gap: 10px; }
 }
