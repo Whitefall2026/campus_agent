@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import date, datetime, timedelta
 
@@ -21,6 +22,7 @@ from app.core import kinds
 from app.core import courses as course_mod
 from app.core.scheduler import SUGGEST_SLOTS, end_time_of
 from app.core.storage import load_todos
+from app.paths import DATA_DIR
 
 PLAN_DAYS = 14
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -155,6 +157,7 @@ def _context_text(todos: list, busy: dict, state: dict) -> str:
             state_lines.append(f"{label}={v}")
     if state_lines:
         lines.append("用户状态：" + "、".join(state_lines))
+    lines.extend(_energy_context_lines())
     lines.append("\n待排期待办：")
     for t in todos:
         dl = t.get("deadline") or ""
@@ -168,6 +171,50 @@ def _context_text(todos: list, busy: dict, state: dict) -> str:
         if busy[iso]:
             lines.append(f"{iso}: " + ", ".join(f"{s}-{e}" for s, e in busy[iso]))
     return "\n".join(lines)
+
+
+def _energy_context_lines() -> list:
+    """读取队友规划引擎的精力曲线与反馈事件，作为 AI 排期的参考数据。
+
+    数据文件可能尚不存在（引擎未运行过），此时返回空列表即可。
+    """
+    out = []
+    profile_path = os.path.join(DATA_DIR, "planner_profile.json")
+    events_path = os.path.join(DATA_DIR, "planner_events.json")
+    try:
+        with open(profile_path, "r", encoding="utf-8") as f:
+            profile = json.load(f)
+        hours = profile.get("hours") if isinstance(profile, dict) else None
+        if isinstance(hours, list) and len(hours) == 24 and all(
+            isinstance(v, (int, float)) for v in hours
+        ):
+            peak = max(range(24), key=lambda i: hours[i])
+            if hours[peak] > 0:
+                out.append(
+                    "精力曲线：{} 点前后是高峰（系数 {:.2f}），"
+                    "8-10 点均值 {:.2f}，深夜不排。".format(
+                        peak, hours[peak],
+                        sum(hours[8:11]) / 3,
+                    )
+                )
+    except (OSError, ValueError, TypeError, KeyError):
+        pass
+    try:
+        with open(events_path, "r", encoding="utf-8") as f:
+            events = json.load(f)
+        if isinstance(events, list) and events:
+            recent = events[-200:]
+            counts = {}
+            for ev in recent:
+                kind = str((ev or {}).get("type") or (ev or {}).get("kind") or "?")
+                counts[kind] = counts.get(kind, 0) + 1
+            total = sum(counts.values())
+            if total:
+                summary = "、".join(f"{k}×{n}" for k, n in sorted(counts.items()))
+                out.append(f"近期规划反馈事件共 {total} 条：{summary}。")
+    except (OSError, ValueError, TypeError):
+        pass
+    return out
 
 
 def _parse_ai_plan(content: str):
