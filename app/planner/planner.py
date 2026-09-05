@@ -137,6 +137,9 @@ def candidate_tasks(todos: list[dict], day: date) -> list[dict]:
             continue  # 已排期的不再规划
         dl = str(t.get("deadline") or "")
         defer_to = str(t.get("plan_defer_to") or "")
+        offered = str(t.get("plan_offered_date") or "")
+        if offered and offered != iso:
+            continue  # 该任务已在别的日期给出方案，等那天处理，不跨天重复提议
         if iso in [str(x) for x in (t.get("plan_skipped_dates") or [])]:
             continue  # 用户当天已明确“跳过”，不再重复提议
         if defer_to and defer_to > iso:

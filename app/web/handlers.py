@@ -493,7 +493,21 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/api/plan/ai":
             day = self._day_from(body.get("date"), date.today())
-            return self._json(self._plan_payload(load_todos(), day, ai=True))
+            todos = load_todos()
+            payload = self._plan_payload(todos, day, ai=True)
+            entries = (payload.get("plan") or {}).get("entries") or []
+            if entries:
+                by_id = {str(t.get("id")): t for t in todos}
+                iso = day.isoformat()
+                changed = False
+                for e in entries:
+                    t = by_id.get(str(e.get("task_id") or ""))
+                    if t is not None and str(t.get("plan_offered_date") or "") != iso:
+                        t["plan_offered_date"] = iso
+                        changed = True
+                if changed:
+                    save_todos(todos)
+            return self._json(payload)
         if path == "/api/plan/apply":
             # 采纳某天的能量规划：placements=排程、deferrals=软线顺延（可只给其一）
             todos = load_todos()
