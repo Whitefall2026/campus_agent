@@ -5,10 +5,12 @@ Handler 由根目录的 server.py 启动；业务逻辑见 app.core / app.ai / a
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import os
 import re
 import sys
+import time
 import uuid
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler
@@ -34,6 +36,9 @@ from app.ai import planner as ai_planner
 from app.wechat.bridge import BRIDGE as WX_BRIDGE
 from app.paths import DATA_DIR, STATIC_DIR
 from app.core import courses as course_mod
+
+_PLAN_CACHE = {}
+_PLAN_TTL = 25
 from app.planner import energy as plan_energy
 from app.planner import fields as plan_fields
 from app.planner import planner as plan_engine
@@ -185,6 +190,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _plan_payload(self, todos, day):
         """当日规划 + 风险评估 + 负载指标（plan/risk/shield 三合一）。"""
+        iso = day.isoformat()
+        try:
+            mtime = os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
+        except OSError:
+            mtime = 0
+        key = (iso, mtime)
+        hit = _PLAN_CACHE.get(key)
+        if hit and time.time() - hit[0] < _PLAN_TTL:
+            return copy.deepcopy(hit[1])
         guide = ai_planner.guide_day_order(todos, day.isoformat())
         if guide.get("order"):
             plan0 = plan_engine.plan_day(
@@ -216,7 +230,13 @@ class Handler(BaseHTTPRequestHandler):
         seed = day.year * 10000 + day.month * 100 + day.day
         plan = plan_risk.plan_with_risk(plan0, seed=seed)
         load = plan_shield.load_metrics(todos, day=day, plan=plan0)
-        return {"ok": True, "date": day.isoformat(), "plan": plan, "load": load}
+        payload = {"ok": True, "date": iso, "plan": plan, "load": load}
+        _PLAN_CACHE[key] = (time.time(), payload)
+        if len(_PLAN_CACHE) > 60:
+            stale = sorted(_PLAN_CACHE.items(), key=lambda kv: kv[1][0])[:30]
+            for k, _v in stale:
+                _PLAN_CACHE.pop(k, None)
+        return payload
 
     def _day_from(self, body_or_query, fallback):
         try:
