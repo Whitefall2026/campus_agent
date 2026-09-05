@@ -93,10 +93,18 @@ def infer_energy_cost(t: dict) -> int:
 
 
 def infer_deadline_type(t: dict) -> str:
-    """从标题/原文推断硬线还是软线；无法判断时按“硬线”保守处理。"""
+    """从标题/交付物推断硬线还是软线；无法判断时按“硬线”保守处理。
+
+    注意只用单条任务自己的标题（+交付物）判断，**不使用整段 raw**：
+    微信/AI 一条多行消息会拆出多条任务，共享同一 raw 全文，若用全文
+    判断，其他行的关键词（如“比赛”）会污染本条的软硬线结论。
+    """
     text = " ".join(str(x) for x in (
-        t.get("title"), t.get("raw"), t.get("deliverable"),
+        t.get("title"), t.get("deliverable"),
     ) if x)
+    if not text:
+        # 标题缺失时退回原文（极少见路径）
+        text = str(t.get("raw") or "")
     if _SOFT_RE.search(text) and not _HARD_RE.search(text):
         return "soft"
     return "hard"

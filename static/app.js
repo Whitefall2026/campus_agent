@@ -795,6 +795,8 @@ function todoItemHTML(t) {
       ${t.done ? rateRowHTML(t.id) : ""}
     </div>
     <div class="td-ops">
+      ${!t.done && (t.energy_cost || 0) >= 3
+        ? `<button class="mini" data-action="decompose" title="AI 拆解为里程碑子任务">✂️ 拆解</button>` : ""}
       ${!t.done ? `<button class="mini plan" data-action="plan" title="规划到日程">规划到日程</button>` : ""}
       <button class="mini" data-action="edit" title="编辑">✎</button>
       <button class="mini" data-action="toggle" data-to="${t.done ? "pending" : "done"}" title="${t.done ? "恢复待办" : "标记完成"}">${t.done ? "↩" : "✓"}</button>
@@ -963,11 +965,22 @@ document.addEventListener("click", async (e) => {
     openItemModal({ mode: "new", defaults: { kind: "schedule", date: iso, time: btn.dataset.time } });
     return;
   }
+  // 拆解面板操作（面板不在 data-id 容器内，需在取 item 之前处理）
+  if (act === "accept-subs") {
+    await acceptSubtasks(btn.dataset.id);
+    return;
+  }
+  if (act === "sub-dismiss") {
+    const panel = btn.closest(".sub-panel");
+    if (panel) panel.remove();
+    return;
+  }
   const item = btn.closest("[data-id]");
   if (!item) return;
   const id = item.dataset.id;
   if (act === "edit") { openItemModal({ mode: "edit", id }); return; }
   if (act === "plan") { openItemModal({ mode: "plan", id }); return; }
+  if (act === "decompose") { runDecompose(id, item); return; }
   if (act === "rate") {
     try {
       await api("/api/feedback", {
@@ -1355,7 +1368,9 @@ $("#shieldResult").addEventListener("click", async (e) => {
   }
 });
 
-/* ---- 待办页：完成后反馈（校准精力曲线） ---- */
+/* ---- 完成反馈：见 rateRowHTML（待办页已完成卡片） ---- */
+
+/* ---- 完成反馈：待办标记完成后给出精力反馈（校准曲线） ---- */
 function rateRowHTML(id) {
   if (state.ratedIds.has(id)) {
     return `<div class="rate-row"><span>✅ 反馈已记录，感谢校准精力曲线</span></div>`;
@@ -1366,6 +1381,55 @@ function rateRowHTML(id) {
     <button class="mini" data-action="rate" data-rate="ok">正常</button>
     <button class="mini" data-action="rate" data-rate="tough">吃力</button>
   </div>`;
+}
+
+/* ================= LLM 里程碑拆解（待办卡片 → 面板） ================= */
+async function runDecompose(id, item) {
+  // 移除同一任务的旧面板
+  const host = item.closest(".todo-item") || document.body;
+  const old = host.parentNode.querySelector(`.sub-panel[data-parent="${id}"]`);
+  if (old) old.remove();
+  const panel = document.createElement("div");
+  panel.className = "sub-panel";
+  panel.dataset.parent = id;
+  panel.innerHTML = '<div class="sub-loading">正在拆解为里程碑子任务…（需要 AI 已启用并配置）</div>';
+  host.after(panel);
+  try {
+    const res = await api("/api/decompose", { method: "POST", body: { id } });
+    if (!res.decomposed) {
+      panel.innerHTML = `<div class="sub-msg">${esc(res.reason || "暂不需要拆解")}</div>
+        <div class="sub-actions"><button class="ghost mini" data-action="sub-dismiss">收起</button></div>`;
+      return;
+    }
+    panel.innerHTML = `
+      <div class="sub-title">🧩 建议拆成 ${res.subtasks.length} 个里程碑</div>
+      ${res.subtasks.map((s, i) => `
+        <div class="sub-row">
+          <span class="sub-idx">${i + 1}</span>
+          <b>${esc(s.name)}</b>
+          ${s.deliverable ? `<span class="sub-deliverable">📦 ${esc(s.deliverable)}</span>` : ""}
+          <span class="badge" style="--c:#7c3aed">⚡${s.energy_cost}</span>
+          ${s.deadline ? `<span class="sub-when">→ ${esc(s.deadline)}</span>` : ""}
+        </div>`).join("")}
+      <div class="sub-actions">
+        <button class="mini ok-todo" data-action="accept-subs" data-id="${esc(id)}">采纳全部为子任务</button>
+        <button class="ghost mini" data-action="sub-dismiss">收起</button>
+      </div>`;
+  } catch (err) {
+    panel.innerHTML = `<div class="sub-msg">拆解失败：${esc(err.message)}</div>
+      <div class="sub-actions"><button class="ghost mini" data-action="sub-dismiss">收起</button></div>`;
+  }
+}
+
+async function acceptSubtasks(id) {
+  try {
+    const res = await api("/api/decompose/accept", { method: "POST", body: { id } });
+    const panel = document.querySelector(`.sub-panel[data-parent="${id}"]`);
+    if (panel) panel.remove();
+    await refresh();
+    await renderTodosPage();
+    alert(`已把 ${res.created} 个子任务加入待办池（可在计划页排期）`);
+  } catch (err) { alert(err.message); }
 }
 
 

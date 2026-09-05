@@ -513,6 +513,30 @@ footer { text-align: center; color: var(--ink-2); font-size: 12px; padding: 16px
   .plan-entry.risk-shake { animation: none; }
 }
 
+/* ================= LLM 拆解面板 ================= */
+.sub-panel {
+  border: 1px dashed #c4b5fd;
+  background: #faf8ff;
+  border-radius: 10px;
+  padding: 9px 12px;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.sub-panel .sub-title { font-weight: 600; color: #5b21b6; margin-bottom: 6px; }
+.sub-panel .sub-loading, .sub-panel .sub-msg { color: var(--ink-2); padding: 4px 0; }
+.sub-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 3px 0; line-height: 1.5;
+}
+.sub-row .sub-idx {
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  background: #7c3aed; color: #fff; font-size: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.sub-row .sub-deliverable { color: var(--ink-2); }
+.sub-row .sub-when { color: var(--ink-2); font-size: 11px; }
+.sub-panel .sub-actions { display: flex; gap: 8px; margin-top: 8px; }
+
 /* 预警 / 顺延 */
 .plan-warnings, .plan-deferrals { margin-bottom: 6px; }
 .warn-box, .defer-box {

@@ -90,6 +90,20 @@ class TestFields(unittest.TestCase):
         hard = fields.normalize_task(mk_todo("b", "期末考试", deadline="2026-06-01"))
         self.assertEqual(hard["ddl_float_days"], 0)
 
+    def test_deadline_type_no_cross_message_contamination(self):
+        # 微信一条多行消息拆出的多条任务共享 raw 全文，
+        # 不能因其他行的“比赛”等词把本条“初稿”误判成硬线
+        raw_all = (
+            "9月6日上午9点到图书馆写课程论文初稿，重要\n"
+            "9月6日下午3点到体育馆参加羽毛球比赛"
+        )
+        soft = fields.normalize_task(mk_todo(
+            "a", "写课程论文初稿", raw=raw_all, deadline="2026-09-06"))
+        self.assertEqual(soft["deadline_type"], "soft")
+        hard = fields.normalize_task(mk_todo(
+            "b", "参加羽毛球比赛", raw=raw_all, deadline="2026-09-06"))
+        self.assertEqual(hard["deadline_type"], "hard")
+
     def test_normalize_keeps_original_intact(self):
         t = mk_todo("a", "期末考试")
         before = dict(t)

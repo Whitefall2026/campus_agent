@@ -22,7 +22,8 @@ from http.server import ThreadingHTTPServer
 from app.paths import DATA_DIR
 from app.web.handlers import Handler
 
-TOUCHED = ["todos.json", "planner_profile.json", "planner_events.json"]
+TOUCHED = ["todos.json", "planner_profile.json", "planner_events.json",
+           "ai_config.json"]
 
 
 class TestApiIntegration(unittest.TestCase):
@@ -39,6 +40,10 @@ class TestApiIntegration(unittest.TestCase):
             p = os.path.join(DATA_DIR, f)
             if os.path.exists(p):
                 shutil.copy2(p, os.path.join(cls._bak, f))
+        # 隔离：测试期间禁用 AI（避免真的调用用户配置的付费接口/泄露配置）
+        with open(os.path.join(DATA_DIR, "ai_config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"enabled": False}, f)
 
     @classmethod
     def tearDownClass(cls):
