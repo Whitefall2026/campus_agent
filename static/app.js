@@ -35,7 +35,11 @@ const state = {
   editId: null,
   editMode: null, // edit | new | plan
   chat: { messages: [], sending: false },
-  aiPlan: [],
+  plan: null,       // /api/plan 载荷 {plan, load}
+  planDay: null,
+  planSig: "",
+  energy: null,     // /api/energy {hours, available_points}
+  ratedIds: new Set(),
 };
 
 /* ---------------- 基础工具 ---------------- */
@@ -139,7 +143,7 @@ function showPage() {
   });
   if (state.page === "schedule") renderSchedulePage();
   if (state.page === "todos") renderTodosPage();
-  if (state.page === "planner") loadAiPlan();
+  if (state.page === "planner") loadPlanner();
   if (state.page === "mine") { refreshWx(); refreshAi(); }
 }
 
@@ -155,6 +159,7 @@ async function refresh() {
     renderHeaderStats();
     if (state.page === "schedule") renderSchedulePage();
     if (state.page === "todos") renderTodosPage();
+    if (state.page === "planner") loadPlanner();
   } catch (err) {
     console.error("refresh failed", err);
   }
@@ -601,128 +606,6 @@ $("#aiPendingList").addEventListener("click", (e) => {
   aiAction(act, item.dataset.id, kind);
 });
 
-/* ================= AI 规划 ================= */
-function planItemHTML(it) {
-  const when = it.date
-    ? `${fmtDay(it.date)}（${fmtWeekday(it.date)}）${it.time}–${it.end_time}`
-    : "暂无可排空档";
-  return `
-    <div class="plan-item" data-id="${esc(it.id)}">
-      <div class="plan-item-main">
-        <div class="plan-title">${esc(it.title || "未命名待办")}</div>
-        <div class="plan-when">🕐 ${esc(when)}</div>
-        ${it.reason ? `<div class="plan-reason">💡 ${esc(it.reason)}</div>` : ""}
-      </div>
-      ${it.date
-        ? `<div class="plan-ops">
-            <button class="primary small" data-plan-act="apply" data-plan-id="${esc(it.id)}">采纳</button>
-            <button class="ghost small" data-plan-act="reject" data-plan-id="${esc(it.id)}">拒绝</button>
-          </div>`
-        : `<span class="badge">需手动安排</span>`}
-    </div>`;
-}
-
-function renderAiPlan() {
-  const items = state.aiPlan || [];
-  const box = $("#planList");
-  if (!items.length) {
-    box.innerHTML = '<div class="plan-empty">暂无建议，先添加未排期的待办再试试。</div>';
-    $("#planApplyAllBtn").disabled = true;
-    return;
-  }
-  box.innerHTML = items.map(planItemHTML).join("");
-  $("#planApplyAllBtn").disabled = !items.some((x) => x.date);
-}
-
-async function loadAiPlan() {
-  const res = await api("/api/ai/plan", { method: "POST", body: {} });
-  state.aiPlan = res.items || [];
-  const method = res.method === "ai" ? "由 AI 生成" : "规则规划";
-  $("#planHint").textContent = `${res.summary || ""}（${method}，采纳后进入日程）`;
-  $("#planCard").classList.remove("hidden");
-  renderAiPlan();
-}
-
-async function planFeedback(action, items) {
-  try {
-    await api("/api/ai/plan/feedback", {
-      method: "POST",
-      body: { action, items },
-    });
-    await loadAiYou().catch(() => {});
-  } catch (_) { /* 反馈失败不影响主流程 */ }
-}
-
-async function applyPlanItem(id) {
-  const it = (state.aiPlan || []).find((x) => x.id === id);
-  if (!it || !it.date) return;
-  try {
-    await api(`/api/todos/${id}`, {
-      method: "PATCH",
-      body: { kind: "schedule", date: it.date, time: it.time, end_time: it.end_time },
-    });
-    await planFeedback("accept", [it]);
-    state.aiPlan = state.aiPlan.filter((x) => x.id !== id);
-    renderAiPlan();
-    await refresh().catch(() => {});
-    if (!state.aiPlan.length) $("#planCard").classList.add("hidden");
-  } catch (err) {
-    alert(err.message);
-  }
-}
-
-async function rejectPlanItem(id) {
-  const it = (state.aiPlan || []).find((x) => x.id === id);
-  if (!it) return;
-  await planFeedback("reject", [it]);
-  state.aiPlan = state.aiPlan.filter((x) => x.id !== id);
-  renderAiPlan();
-  if (!state.aiPlan.length) $("#planCard").classList.add("hidden");
-}
-
-$("#aiPlanBtn").addEventListener("click", async () => {
-  $("#aiPlanBtn").disabled = true;
-  try {
-    await loadAiPlan();
-  } catch (err) {
-    alert(err.message);
-  } finally {
-    $("#aiPlanBtn").disabled = false;
-  }
-});
-$("#planList").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-plan-act]");
-  if (!btn) return;
-  if (btn.dataset.planAct === "apply") applyPlanItem(btn.dataset.planId);
-  if (btn.dataset.planAct === "reject") rejectPlanItem(btn.dataset.planId);
-});
-$("#planApplyAllBtn").addEventListener("click", async () => {
-  const items = (state.aiPlan || []).filter((x) => x.date);
-  if (!items.length) return;
-  if (!confirm(`确认把 ${items.length} 条建议全部采纳进日程？`)) return;
-  let ok = 0;
-  const applied = [];
-  for (const it of items) {
-    try {
-      await api(`/api/todos/${it.id}`, {
-        method: "PATCH",
-        body: { kind: "schedule", date: it.date, time: it.time, end_time: it.end_time },
-      });
-      ok++;
-      applied.push(it);
-    } catch (_) { /* 单条失败不中断 */ }
-  }
-  if (applied.length) await planFeedback("accept", applied);
-  state.aiPlan = [];
-  $("#planCard").classList.add("hidden");
-  await refresh().catch(() => {});
-  alert(`已采纳 ${ok}/${items.length} 条排期建议`);
-});
-$("#planCloseBtn").addEventListener("click", () => {
-  state.aiPlan = [];
-  $("#planCard").classList.add("hidden");
-});
-
 /* ================= 日程页 ================= */
 function dayInfo(iso) {
   const d = new Date(iso + "T00:00:00");
@@ -745,7 +628,7 @@ function eventHTML(t) {
       <button class="mini del" data-action="del" title="删除">✕</button>
     </span>`;
   return `
-  <div class="ev ${t.done ? "done" : ""} ${t.time ? "" : "all-day"}" data-id="${esc(t.id)}">
+  <div class="ev ${t.done ? "done" : ""} ${t.time ? "" : "all-day"}" data-id="${esc(t.id)}" ${t.course ? "" : `draggable="true" title="按住可拖到其他时段"`}>
     <span class="ev-title">${esc(t.title)}</span>
     ${meta ? `<span class="ev-meta">${meta}</span>` : ""}
     <span class="badge" style="--c:${c.color}">${c.icon} ${c.label}</span>
@@ -774,24 +657,25 @@ function renderSchedulePage() {
   }
 
   const allDay = items.filter((t) => !t.time);
-  if (!items.length) {
-    $("#scheduleTimeline").innerHTML = `
-      <div class="empty-day">
-        <div class="empty-icon">🗓️</div>
-        <p>${info.label} 还没有安排</p>
-        <button class="primary" data-action="add-day">＋ 添加安排</button>
-      </div>`;
-    return;
-  }
   const periodDef = [
     { key: "am", label: "☀️ 上午", min: "00:00", max: "12:00", def: "09:00" },
     { key: "pm", label: "🌤️ 下午", min: "12:00", max: "18:00", def: "14:00" },
     { key: "ev", label: "🌙 晚上", min: "18:00", max: "24:00", def: "19:30" },
   ];
   const inPeriod = (t, p) => t.time && t.time >= p.min && t.time < p.max;
+  const emptyDayMsg = !items.length
+    ? `<div class="empty-day">
+         <div class="empty-icon">🗓️</div>
+         <p>${info.label} 还没有安排 — 把待办卡片拖进下面的时段，即可排进这天</p>
+         <button class="primary" data-action="add-day">＋ 添加安排</button>
+       </div>`
+    : "";
+  // 三个时段块始终渲染：空时段也能作为拖拽落点
   const blocks = periodDef.map((p) => {
     const evs = items.filter((t) => inPeriod(t, p)).sort((a, b) => (a.time < b.time ? -1 : 1));
-    if (!evs.length) return "";
+    const body = evs.length
+      ? evs.map(eventHTML).join("")
+      : `<div class="drop-hint">空闲 · 可把卡片拖到这里</div>`;
     return `
       <div class="period-block">
         <div class="period-head">
@@ -800,18 +684,71 @@ function renderSchedulePage() {
           <button class="mini period-add" data-action="add-at" data-time="${p.def}"
                   title="在 ${p.label} 添加安排">＋</button>
         </div>
-        <div class="period-list">${evs.map(eventHTML).join("")}</div>
+        <div class="period-list" data-def="${p.def}">${body}</div>
       </div>`;
   }).join("");
   const allDayBlock = allDay.length
     ? `
       <div class="period-block">
         <div class="period-head"><span>📌 全天</span><span class="period-count">${allDay.length} 项</span></div>
-        <div class="period-list">${allDay.map(eventHTML).join("")}</div>
+        <div class="period-list" data-def="09:00">${allDay.map(eventHTML).join("")}</div>
       </div>`
     : "";
-  $("#scheduleTimeline").innerHTML = allDayBlock + blocks;
+  $("#scheduleTimeline").innerHTML = emptyDayMsg + allDayBlock + blocks;
 }
+
+/* ================= 拖拽调整（拖到其他时段 / 拖入某一天） ================= */
+function addMinTo(hm, mins) {
+  const [h, m] = String(hm).split(":").map(Number);
+  const total = ((h * 60 + m + mins) % (24 * 60) + 24 * 60) % (24 * 60);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(Math.floor(total / 60))}:${p(total % 60)}`;
+}
+
+document.addEventListener("dragstart", (e) => {
+  const card = e.target.closest(".ev, .todo-item");
+  if (!card || !card.dataset.id) return;
+  const t = findTodo(card.dataset.id);
+  if (!t || t.course || t.done) { e.preventDefault(); return; }
+  e.dataTransfer.setData("text/plain", card.dataset.id);
+  e.dataTransfer.effectAllowed = "move";
+});
+
+function dragZone(e) {
+  return e.target.closest(".period-list, #scheduleTimeline");
+}
+document.addEventListener("dragover", (e) => {
+  const zone = dragZone(e);
+  if (!zone) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  zone.classList.add("drag-over");
+});
+document.addEventListener("dragleave", (e) => {
+  const zone = dragZone(e);
+  if (zone) zone.classList.remove("drag-over");
+});
+document.addEventListener("drop", async (e) => {
+  const zone = dragZone(e);
+  if (!zone) return;
+  e.preventDefault();
+  zone.classList.remove("drag-over");
+  const id = e.dataTransfer.getData("text/plain");
+  if (!id) return;
+  const t = findTodo(id);
+  if (!t) return;
+  const dateISO = state.day || todayISO();
+  const newTime = zone.dataset.def || t.time || "09:00";
+  const dur = t.duration_min || 60;
+  const endTime = addMinTo(newTime, dur);
+  try {
+    const res = await api("/api/plan/move", {
+      method: "POST",
+      body: { id, date: dateISO, time: newTime, end_time: endTime },
+    });
+    await refresh();
+  } catch (err) { alert(err.message); }
+});
 
 $("#dayPrev").addEventListener("click", () => {
   state.day = addDays(state.day, -1);
@@ -851,13 +788,16 @@ function todoItemHTML(t) {
     t.deadline && t.deadline < (state.data ? state.data.today : "") && !t.done ? "（已逾期）" : "",
   ].filter(Boolean).join("　");
   return `
-  <div class="todo-item ${t.done ? "done" : ""} ${t.overdue ? "overdue" : ""}" data-id="${esc(t.id)}">
+  <div class="todo-item ${t.done ? "done" : ""} ${t.overdue ? "overdue" : ""}" data-id="${esc(t.id)}" ${t.done ? "" : `draggable="true" title="按住可拖到日程页的某个时段"`}>
     <div class="td-main">
       <div class="td-title">${esc(t.title)} <span class="tl-badges">${badges}</span></div>
       ${meta ? `<div class="td-meta">${meta}</div>` : ""}
       ${t.location ? `<div class="td-meta">📍 ${esc(t.location)}</div>` : ""}
+      ${t.done ? rateRowHTML(t.id) : ""}
     </div>
     <div class="td-ops">
+      ${!t.done && (t.energy_cost || 0) >= 3
+        ? `<button class="mini" data-action="decompose" title="AI 拆解为里程碑子任务">✂️ 拆解</button>` : ""}
       ${!t.done ? `<button class="mini plan" data-action="plan" title="规划到日程">规划到日程</button>` : ""}
       <button class="mini" data-action="edit" title="编辑">✎</button>
       <button class="mini" data-action="toggle" data-to="${t.done ? "pending" : "done"}" title="${t.done ? "恢复待办" : "标记完成"}">${t.done ? "↩" : "✓"}</button>
@@ -940,6 +880,9 @@ function openItemModal({ mode, id, defaults = {} }) {
   $("#edDeadline").value = (t ? t.deadline : defaults.deadline) || "";
   $("#edDeadlineTime").value = (t ? t.deadline_time : defaults.deadline_time) || "";
   $("#edPriority").value = (t ? t.priority : defaults.priority) || "medium";
+  $("#edDdlType").value = (t ? t.deadline_type : defaults.deadline_type) || "";
+  $("#edEnergy").value = t && t.energy_cost != null ? String(t.energy_cost) : (defaults.energy_cost != null ? String(defaults.energy_cost) : "");
+  $("#edDeliverable").value = (t ? t.deliverable : defaults.deliverable) || "";
   const tip = $("#planTip");
   if (mode === "plan") {
     const sug = state.suggestionsById[id];
@@ -983,6 +926,9 @@ async function saveItemModal() {
     deadline: $("#edDeadline").value || null,
     deadline_time: $("#edDeadlineTime").value || null,
     priority: $("#edPriority").value,
+    deadline_type: $("#edDdlType").value || null,
+    energy_cost: $("#edEnergy").value ? parseInt($("#edEnergy").value, 10) : null,
+    deliverable: $("#edDeliverable").value.trim() || null,
   };
   try {
     let res;
@@ -1031,11 +977,33 @@ document.addEventListener("click", async (e) => {
     openItemModal({ mode: "new", defaults: { kind: "schedule", date: iso, time: btn.dataset.time } });
     return;
   }
+  // 拆解面板操作（面板不在 data-id 容器内，需在取 item 之前处理）
+  if (act === "accept-subs") {
+    await acceptSubtasks(btn.dataset.id);
+    return;
+  }
+  if (act === "sub-dismiss") {
+    const panel = btn.closest(".sub-panel");
+    if (panel) panel.remove();
+    return;
+  }
   const item = btn.closest("[data-id]");
   if (!item) return;
   const id = item.dataset.id;
   if (act === "edit") { openItemModal({ mode: "edit", id }); return; }
   if (act === "plan") { openItemModal({ mode: "plan", id }); return; }
+  if (act === "decompose") { runDecompose(id, item); return; }
+  if (act === "rate") {
+    try {
+      await api("/api/feedback", {
+        method: "POST",
+        body: { id, rating: btn.dataset.rate },
+      });
+      state.ratedIds.add(id);
+      renderTodosPage();
+    } catch (err) { alert(err.message); }
+    return;
+  }
   try {
     let res;
     if (act === "toggle") {
@@ -1111,7 +1079,326 @@ $("#aiTestBtn").addEventListener("click", async () => {
   } catch (err) { alert(err.message); }
 });
 
-/* ================= 课程表导入 ================= */
+/* ================= 计划页（能量看板 + 挡箭牌） ================= */
+const RING_CIRC = 2 * Math.PI * 52;
+
+const DDL_LABEL = {
+  hard: { text: "硬线", cls: "dl-hard", icon: "🔴" },
+  soft: { text: "软线", cls: "dl-soft", icon: "🟡" },
+};
+
+async function loadPlanner(force) {
+  const day = state.planDay || todayISO();
+  state.planDay = day;
+  const sig = day;
+  if (!force && state.planSig === sig && state.plan) {
+    renderPlannerPage();
+    return;
+  }
+  try {
+    const [planRes, energyRes] = await Promise.all([
+      api(`/api/plan?date=${day}`),
+      api("/api/energy"),
+    ]);
+    state.plan = planRes;
+    state.energy = energyRes.energy || null;
+    state.planSig = sig;
+    renderPlannerPage();
+  } catch (err) {
+    console.error("loadPlanner failed", err);
+    $("#planHint").textContent = "加载失败：" + err.message;
+  }
+}
+
+function planWarnById() {
+  const map = {};
+  ((state.plan && state.plan.plan.warnings) || []).forEach((w) => {
+    if (!map[w.task_id]) map[w.task_id] = w;
+  });
+  return map;
+}
+
+function renderPlannerPage() {
+  if (!state.plan) return;
+  const day = state.planDay || state.plan.date || todayISO();
+  $("#planPick").value = day;
+  $("#planTitle").textContent =
+    dayInfo(day).label + (state.plan.plan.date === day ? "" : "（本地日期）");
+
+  const plan = state.plan.plan;
+  const load = state.plan.load || {};
+  const b = plan.budget || {};
+
+  // ---- 能量环（只显示剩余比例颜色，不显示数值占位） ----
+  const avail = b.available_points || 0;
+  const used = b.planned_points || 0;
+  const remain = Math.max(0, avail - used);
+  const ratio = avail > 0 ? remain / avail : 0;   // 剩余能量占比
+  const color = ratio >= 0.6 ? "#22c55e" : ratio >= 0.35 ? "#f59e0b" : "#e5484d";
+  const fg = $("#ringFg");
+  fg.style.stroke = color;
+  fg.style.strokeDasharray = RING_CIRC;
+  fg.style.strokeDashoffset = RING_CIRC * (1 - ratio);
+  $("#energyHint").textContent = b.free_runs
+    ? `${b.free_runs} 段空闲 · 容差 ×${plan.meta.tolerance}`
+    : "这一天没有空闲时段";
+  $("#energyMeta").innerHTML =
+    `可用 <b>${avail}</b> 点 · 已排 <b>${used}</b> 点` +
+    `<br>占用 <b>${Math.round((b.planned_ratio || 0) * 100)}%</b>` +
+    `<br><span style="font-size:11px">1 点 ≈ 状态好时的 30 分钟专注</span>`;
+
+  // ---- 精力曲线 ----
+  const hours = (state.energy && state.energy.hours) || [];
+  const cells = [];
+  for (let h = 7; h <= 22; h++) {
+    const c = hours[h] || 0;
+    const pct = Math.max(6, Math.min(100, (c / 1.2) * 100));
+    cells.push(
+      `<div class="cell ${c < 0.25 ? "z" : ""}" title="${h} 点 · 系数 ${c.toFixed(1)}">
+         <i style="height:${pct}%"></i></div>`);
+  }
+  $("#curveStrip").innerHTML = cells.join("");
+
+  // ---- 排程入口 & 空态 ----
+  const entries = plan.entries || [];
+  const empty = $("#planEmpty");
+  const box = $("#planEntries");
+  if (!entries.length) {
+    box.innerHTML = "";
+    empty.innerHTML = plan.candidates === 0
+      ? `<div class="plan-empty">这一天没有等待规划的任务 🎉
+          <br><span style="font-size:12px">把带截止日期的任务留在「待办」页，规划日当天这里会自动给出排程。</span></div>`
+      : `<div class="plan-empty">任务没排进去：先看看下方预警/明日优先说明。</div>`;
+  } else {
+    empty.innerHTML = "";
+    const warns = planWarnById();
+    box.innerHTML = entries.map((e) => entryHTML(e, day, warns)).join("");
+  }
+  $("#planHint").innerHTML = entries.length
+    ? `${entries.length} 项待采纳 · 另有 ${(plan.tomorrow || []).length} 项明日优先`
+    : "暂无排程建议";
+
+  // ---- 预警（阻塞）与明日优先 ----
+  const warnBox = $("#planWarnings");
+  const blocked = (plan.warnings || []).filter((w) => w.level === "blocked");
+  const toleranceCount = (plan.warnings || []).filter((w) => w.level === "tolerance").length;
+  const tomorrow = plan.tomorrow || [];
+  let html = "";
+  if (blocked.length) {
+    html += blocked.map((w) =>
+      `<div class="warn-box">⚠️ ${esc(w.copy)}</div>`).join("");
+  }
+  if (tomorrow.length) {
+    html += `<div class="tomorrow-title">明日优先（今日未能启动）</div>` +
+      tomorrow.map((t) => {
+        const dd = DDL_LABEL[t.deadline_type] || DDL_LABEL.hard;
+        const isToday = t.deadline === day;
+        return `<span class="tomorrow-chip" title="${dd.text}截止${isToday ? "（今日截止）" : ""}">
+          ${esc(t.title)}${isToday ? ` <span class="t-risk">${dd.icon} 今日截止</span>` : ""}</span>`;
+      }).join("");
+  }
+  if (!html && toleranceCount) {
+    html = `<div style="font-size:12px;color:var(--ink-2)">${toleranceCount} 项属容差适配（⚡），卡片内已给出温和说明。</div>`;
+  }
+  warnBox.innerHTML = html;
+
+  // ---- 软线顺延建议 ----
+  const deferrals = plan.deferrals || [];
+  const deferBox = $("#planDeferrals");
+  deferBox.innerHTML = deferrals.map((d) => `
+    <div class="defer-box">
+      <span class="defer-copy">🟡 ${esc(d.copy)}</span>
+      <span class="defer-copy" style="font-size:11px">原截止 ${esc(d.deadline)} → 顺延至 ${esc(d.to_date)}（${fmtWeekday(d.to_date)}）</span>
+      <div class="defer-actions">
+        <button class="mini ok-todo" data-plan="defer-yes" data-id="${esc(d.task_id)}">✅ 同意顺延</button>
+        <button class="ghost mini" data-plan="defer-no">暂不处理</button>
+      </div>
+    </div>`).join("");
+}
+
+function entryHTML(e, day, warns) {
+  const warn = warns[e.task_id] || null;
+  const dd = DDL_LABEL[e.deadline_type] || null;
+  const hardToday = dd && dd.cls === "dl-hard" && e.deadline === day;
+  const prob = e.probability != null ? Math.round(e.probability * 100) : null;
+  const pcls = prob == null ? "" : prob >= 75 ? "p-hi" : prob >= 60 ? "p-mid" : "p-low";
+  const risk = !!e.risk;
+  const adapt = !!e.tolerance;
+  const adaptNote = warn && warn.level === "tolerance"
+    ? esc(warn.copy)
+    : "这项任务原计划需稍多精力，但系统评估你今天的状态可以拿下（≤15% 容差）。";
+  const deadlineLine = e.deadline
+    ? ` · ${dd ? dd.icon + " " + dd.text : ""}${hardToday ? " 今日截止" : ""}${e.deadline_time ? " " + esc(e.deadline_time) : ""}`
+    : "";
+  const deliverable = e.deliverable ? ` 📦 ${esc(e.deliverable)}` : "";
+  return `
+  <div class="plan-entry ${hardToday || (dd && dd.cls === "dl-hard") ? "ddl-hard" : (dd ? "ddl-soft" : "")} ${risk ? "risk-shake" : ""}">
+    <div class="entry-time">${esc(e.start)}–${esc(e.end)}</div>
+    <div class="entry-body">
+      <div class="entry-title">${esc(e.title)}${adapt ? `<span class="tag-adapt">⚡适配</span>` : ""}
+        <span class="badge" style="--c:${hardToday ? "#e5484d" : "#f59e0b"}">${hardToday ? "硬线·今日截止" : (dd ? dd.text + "截止" : "待办")}</span>
+      </div>
+      <div class="entry-meta">
+        ${esc(deadlineLine || "无截止")}${deliverable}
+        ${adapt ? `<br>${adaptNote}` : ""}
+      </div>
+      ${prob != null ? `
+      <div class="prob-bar"><i class="fill ${pcls}" style="width:${prob}%"></i></div>
+      <div class="prob-note ${risk ? "risk" : ""}">
+        ${risk ? `⚠️ 完成概率 ${prob}%，系统不太放心` : `完成概率约 ${prob}%`}
+      </div>
+      ${risk && e.risk_copy ? `<div class="entry-meta" style="margin-top:4px">💡 ${esc(e.risk_copy)}</div>` : ""}`
+      : ""}
+    </div>
+      <div class="entry-ops">
+      <button class="mini ok-todo" data-plan="adopt" data-id="${esc(e.task_id)}" title="采纳进日程">采纳</button>
+      <button class="mini" data-plan="skip" data-id="${esc(e.task_id)}" title="不采纳这条建议">跳过</button>
+    </div>
+  </div>`;
+}
+
+/* ---- 计划页控件 ---- */
+function planPreferenceFeedback(action, entries) {
+  const items = (entries || []).map((e) => ({
+    id: e.task_id,
+    title: e.title,
+    date: state.planDay,
+    time: e.start || e.time || "",
+    end_time: e.end || e.end_time || "",
+  }));
+  if (!items.length) return Promise.resolve();
+  return api("/api/ai/plan/feedback", {
+    method: "POST",
+    body: { action, items },
+  }).catch(() => {});
+}
+
+$("#planPrev").addEventListener("click", () => { state.planDay = addDays(state.planDay, -1); loadPlanner(true); });
+$("#planNext").addEventListener("click", () => { state.planDay = addDays(state.planDay, 1); loadPlanner(true); });
+$("#planToday").addEventListener("click", () => { state.planDay = todayISO(); loadPlanner(true); });
+$("#planPick").addEventListener("change", (e) => {
+  if (e.target.value) { state.planDay = e.target.value; loadPlanner(true); }
+});
+$("#planRecomputeBtn").addEventListener("click", () => loadPlanner(true));
+
+$("#planApplyAllBtn").addEventListener("click", async () => {
+  const plan = state.plan && state.plan.plan;
+  if (!plan || !(plan.entries || []).length) { alert("没有可采纳的排程"); return; }
+  if (!confirm(`一键把今天 ${plan.entries.length} 项建议全部写入日程？（软线顺延需单独点「同意顺延」）`)) return;
+  try {
+    await api("/api/plan/apply", {
+      method: "POST",
+      body: { date: state.planDay, placements: (plan.entries || []).map((x) => x.task_id) },
+    });
+    await planPreferenceFeedback("accept", plan.entries || []);
+    await refresh();
+    await loadPlanner(true);
+  } catch (err) { alert(err.message); }
+});
+
+$("#planEntries").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-plan]");
+  if (!btn) return;
+  if (btn.dataset.plan === "adopt") {
+    try {
+      const res = await api("/api/plan/apply", {
+        method: "POST",
+        body: { date: state.planDay, placements: [btn.dataset.id] },
+      });
+      const entry = (state.plan && state.plan.plan.entries || [])
+        .find((x) => x.task_id === btn.dataset.id);
+      if (entry) await planPreferenceFeedback("accept", [entry]);
+      await refresh();
+      await loadPlanner(true);
+    } catch (err) { alert(err.message); }
+  } else if (btn.dataset.plan === "skip") {
+    const entry = (state.plan && state.plan.plan.entries || [])
+      .find((x) => x.task_id === btn.dataset.id);
+    if (entry) await planPreferenceFeedback("reject", [entry]);
+    const card = btn.closest(".plan-entry");
+    if (card) card.remove();
+  }
+});
+$("#planDeferrals").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-plan]");
+  if (!btn) return;
+  const box = btn.closest(".defer-box");
+  if (btn.dataset.plan === "defer-no") { if (box) box.remove(); return; }
+  if (btn.dataset.plan === "defer-yes") {
+    try {
+      const res = await api("/api/plan/apply", {
+        method: "POST",
+        body: { date: state.planDay, deferrals: [btn.dataset.id] },
+      });
+      await refresh();
+      await loadPlanner(true);
+    } catch (err) { alert(err.message); }
+  }
+});
+
+/* ---- 完成反馈：待办标记完成后给出精力反馈（校准曲线） ---- */
+function rateRowHTML(id) {
+  if (state.ratedIds.has(id)) {
+    return `<div class="rate-row"><span>✅ 反馈已记录，感谢校准精力曲线</span></div>`;
+  }
+  return `<div class="rate-row">
+    <span>这项做完的感觉？</span>
+    <button class="mini" data-action="rate" data-rate="easy">轻松</button>
+    <button class="mini" data-action="rate" data-rate="ok">正常</button>
+    <button class="mini" data-action="rate" data-rate="tough">吃力</button>
+  </div>`;
+}
+
+/* ================= LLM 里程碑拆解（待办卡片 → 面板） ================= */
+async function runDecompose(id, item) {
+  // 移除同一任务的旧面板
+  const host = item.closest(".todo-item") || document.body;
+  const old = host.parentNode.querySelector(`.sub-panel[data-parent="${id}"]`);
+  if (old) old.remove();
+  const panel = document.createElement("div");
+  panel.className = "sub-panel";
+  panel.dataset.parent = id;
+  panel.innerHTML = '<div class="sub-loading">正在拆解为里程碑子任务…（需要 AI 已启用并配置）</div>';
+  host.after(panel);
+  try {
+    const res = await api("/api/decompose", { method: "POST", body: { id } });
+    if (!res.decomposed) {
+      panel.innerHTML = `<div class="sub-msg">${esc(res.reason || "暂不需要拆解")}</div>
+        <div class="sub-actions"><button class="ghost mini" data-action="sub-dismiss">收起</button></div>`;
+      return;
+    }
+    panel.innerHTML = `
+      <div class="sub-title">🧩 建议拆成 ${res.subtasks.length} 个里程碑</div>
+      ${res.subtasks.map((s, i) => `
+        <div class="sub-row">
+          <span class="sub-idx">${i + 1}</span>
+          <b>${esc(s.name)}</b>
+          ${s.deliverable ? `<span class="sub-deliverable">📦 ${esc(s.deliverable)}</span>` : ""}
+          <span class="badge" style="--c:#7c3aed">⚡${s.energy_cost}</span>
+          ${s.deadline ? `<span class="sub-when">→ ${esc(s.deadline)}</span>` : ""}
+        </div>`).join("")}
+      <div class="sub-actions">
+        <button class="mini ok-todo" data-action="accept-subs" data-id="${esc(id)}">采纳全部为子任务</button>
+        <button class="ghost mini" data-action="sub-dismiss">收起</button>
+      </div>`;
+  } catch (err) {
+    panel.innerHTML = `<div class="sub-msg">拆解失败：${esc(err.message)}</div>
+      <div class="sub-actions"><button class="ghost mini" data-action="sub-dismiss">收起</button></div>`;
+  }
+}
+
+async function acceptSubtasks(id) {
+  try {
+    const res = await api("/api/decompose/accept", { method: "POST", body: { id } });
+    const panel = document.querySelector(`.sub-panel[data-parent="${id}"]`);
+    if (panel) panel.remove();
+    await refresh();
+    await renderTodosPage();
+    alert(`已把 ${res.created} 个子任务加入待办池（可在计划页排期）`);
+  } catch (err) { alert(err.message); }
+}
+
+
 function courseResult(text, isErr) {
   const el = $("#courseResult");
   el.classList.remove("hidden", "err");

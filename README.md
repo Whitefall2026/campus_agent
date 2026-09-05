@@ -16,6 +16,13 @@
 - **微信自动提取**：读取并监听微信 4.x 聊天消息（wechatauto-replica），把含
   时间/地点/截止等要素的消息自动识别成日程；支持文件传输助手转发、指定会话或
   全部会话
+- **能量计划页（🧭 计划）**：按“精力曲线 × 空闲时段”贪心排期（容差 15%，
+  ⚡适配提示）、完成概率预判（历史 + 简化蒙特卡洛）、硬线/软线双轨截止
+  视觉区分、负载过高自动软性顺延建议与「明日优先」兜底；采纳后才写入日程
+- **智能挡箭牌（🛡️）**：粘贴外部任务（团建/聚餐通知）→ 自动评估当前负载，
+  生成冷静、不制造焦虑的“婉拒/待定/接单”话术，可一键复制或仍添加
+- **精力反馈校准**：完成待办后点「轻松/正常/吃力」，逐小时精力曲线按
+  指数移动平均自动微调，排期会越用越贴合你的真实状态
 
 ## 运行
 
@@ -25,7 +32,8 @@
 python server.py
 ```
 
-浏览器打开 http://127.0.0.1:8000，顶部切换「输入 / 日程 / 待办」三个页面
+浏览器打开 http://127.0.0.1:8000，顶部切换「对话 / 日程 / 待办 / 计划 / 我的」
+五个页面（「计划」页会按精力曲线给出待办的能量排期与风险提示）
 
 - 换端口：`python server.py 9000`
 - 数据保存在 `data/todos.json`，删除该文件即可重置
@@ -100,12 +108,22 @@ server.py             入口（启动 HTTP 服务；端口、微信自动启动�
 app/core/             领域核心：extractor（自然语言→结构化）、scheduler（冲突/时间轴）、
                       kinds（类别）、storage（本地 JSON 持久化）
 app/ai/gateway.py     AI Gateway（预筛 → 大模型提取 → 待采纳确认）
+app/planner/          「基于处境的推理与规划」引擎：
+                      fields（耗能/硬软线字段归一化）、energy（24h 精力曲线 + EMA）、
+                      planner（空闲块 + 贪心排期 + 软线顺延 + 拖拽偏好）、
+                      decompose（LLM 里程碑拆解，可选用）、
+                      risk（历史完成率 + 蒙特卡洛）、shield（负载评估 + 挡箭牌话术）
 app/wechat/bridge.py  微信读取/监听桥接（WeChatDB + Listener → 自动提取日程）
 app/web/handlers.py   HTTP 路由 + 静态页面服务
 app/paths.py          仓库内关键路径（data/、static/ 统一定位）
 static/               前端页面（原生 HTML / CSS / JS，无框架）
+tests/                单元测试 + 真实 HTTP 端到端集成测试
 wechatauto-replica-main/  第三方库 wechatauto-replica（微信能力，Apache-2.0）
 ```
+
+规划相关运行数据：`data/planner_profile.json`（精力曲线）、
+`data/planner_events.json`（完成/反馈/拖拽/顺延事件日志），均在 `data/` 内
+不会提交。
 
 ## 后续可以怎么升级
 
@@ -129,4 +147,7 @@ wechatauto-replica-main/  第三方库 wechatauto-replica（微信能力，Apach
    的随仓库副本，仅作微信能力支撑，改动前请先看它的 LICENSE。
 3. 所有本地运行数据（含 API Key、微信状态、个人日程）都写入 `data/`，
    该目录已被 `.gitignore` 忽略，**严禁提交**；换机器后重新配置即可。
-4. 分支、提交信息与本地验证的约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+4. 改动后端后建议先自检（详见 CONTRIBUTING.md）：
+   `python -m unittest discover -s tests`（单元 + 端到端 API 集成测试）；
+   也可单独看某天的能量排程演示：`python -m app.planner.demo`。
+5. 分支、提交信息与本地验证的约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。

@@ -12,7 +12,7 @@ import sys
 import uuid
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -34,6 +34,14 @@ from app.ai import planner as ai_planner
 from app.wechat.bridge import BRIDGE as WX_BRIDGE
 from app.paths import DATA_DIR, STATIC_DIR
 from app.core import courses as course_mod
+from app.planner import energy as plan_energy
+from app.planner import fields as plan_fields
+from app.planner import planner as plan_engine
+from app.planner import risk as plan_risk
+from app.planner import shield as plan_shield
+from app.planner import decompose as plan_decompose
+from app.planner import store as plan_store
+from app.planner import llm_copies as plan_llm
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -59,12 +67,54 @@ SAMPLE_TEXTS = [
 ALLOWED_FIELDS = {
     "title", "status", "date", "time", "end_time", "deadline",
     "deadline_time", "priority", "location", "duration_min", "kind",
+    "energy_cost", "deliverable", "deadline_type", "ddl_float_days",
+    "parent_id",
 }
 
 TODO_FIELDS = (
     "title", "category", "priority", "kind", "date", "time", "end_time",
     "duration_min", "location", "deadline", "deadline_time", "raw",
+    "energy_cost", "deliverable", "deadline_type", "ddl_float_days",
+    "parent_id",
 )
+
+VALID_ENERGY = {1, 2, 3, 4, 5}
+VALID_DDL_TYPES = {"hard", "soft"}
+_SKIP_FIELD = object()
+
+
+def _norm_planner_field(k: str, v):
+    """把规划类字段规整成合法值；不合法返回 _SKIP_FIELD 表示丢弃。"""
+    if k == "energy_cost":
+        if v in (None, ""):
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return _SKIP_FIELD
+        return n if n in VALID_ENERGY else _SKIP_FIELD
+    if k == "deliverable":
+        if v in (None, ""):
+            return None
+        s = str(v).strip()
+        return s[:120] or None
+    if k == "deadline_type":
+        v = str(v or "").strip().lower()
+        return v if v in VALID_DDL_TYPES else _SKIP_FIELD
+    if k == "ddl_float_days":
+        if v in (None, ""):
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return _SKIP_FIELD
+        return n if 0 <= n <= 7 else _SKIP_FIELD
+    if k == "parent_id":
+        if v in (None, ""):
+            return None
+        s = str(v).strip()
+        return s[:40] or None
+    return _SKIP_FIELD
 
 
 def make_todo_from_text(text: str, kind: str | None = None) -> dict | None:
@@ -78,12 +128,17 @@ def make_todo_from_text(text: str, kind: str | None = None) -> dict | None:
     )
     if norm.get("kind") == kinds.KIND_SCHEDULE and not norm.get("date"):
         return None  # 日程必须能被放进某一天，否则交给待办
-    return {
+    return _finalize_todo({
         **norm,
         "id": uuid.uuid4().hex[:10],
         "status": "pending",
         "created_at": datetime.now().isoformat(timespec="seconds"),
-    }
+    })
+
+
+def _finalize_todo(todo: dict) -> dict:
+    """入库前补全规划默认字段（耗能/时长/硬软线/浮动天数），返回新 dict。"""
+    return plan_fields.normalize_task(todo)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -128,11 +183,42 @@ class Handler(BaseHTTPRequestHandler):
     def _state(self):
         return build_state(load_todos())
 
+    def _plan_payload(self, todos, day):
+        """当日规划 + 风险评估 + 负载指标（plan/risk/shield 三合一）。"""
+        plan0 = plan_engine.plan_day(todos, day=day)
+        seed = day.year * 10000 + day.month * 100 + day.day
+        plan = plan_risk.plan_with_risk(plan0, seed=seed)
+        load = plan_shield.load_metrics(todos, day=day, plan=plan0)
+        return {"ok": True, "date": day.isoformat(), "plan": plan, "load": load}
+
+    def _day_from(self, body_or_query, fallback):
+        try:
+            s = str(body_or_query or "")
+            return date.fromisoformat(s) if s else fallback
+        except ValueError:
+            return fallback
+
     # ---- 路由 ----
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/state":
             return self._json(self._state())
+        if path == "/api/plan":
+            qs = parse_qs(urlparse(self.path).query)
+            day = self._day_from(
+                (qs.get("date") or [None])[0], date.today())
+            return self._json(self._plan_payload(load_todos(), day))
+        if path == "/api/energy":
+            prof = plan_energy.load_profile()
+            return self._json({
+                "ok": True,
+                "energy": {
+                    "version": int(prof.get("version") or 1),
+                    "updated_at": prof.get("updated_at"),
+                    "hours": prof.get("hours") or plan_energy.DEFAULT_HOUR_COEF,
+                    "available_points": round(plan_energy.available_total(prof), 2),
+                },
+            })
         if path == "/api/wechat/status":
             return self._json(WX_BRIDGE.status())
         if path == "/api/ai/config":
@@ -190,6 +276,10 @@ class Handler(BaseHTTPRequestHandler):
             fields["title"] = title
             fields["category"] = str(body.get("category") or "other").strip()
             fields["priority"] = str(body.get("priority") or "medium").strip()
+            for k in ("energy_cost", "deliverable", "deadline_type",
+                      "ddl_float_days", "parent_id"):
+                v = _norm_planner_field(k, fields.get(k))
+                fields[k] = v if v is not _SKIP_FIELD else None
             norm = kinds.normalize_item(
                 fields,
                 kind=body.get("kind"),
@@ -200,12 +290,12 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": False,
                     "error": "日程必须包含日期（请填写日期后再保存，或改选待办）",
                 }, 400)
-            todo = {
+            todo = _finalize_todo({
                 **norm,
                 "id": uuid.uuid4().hex[:10],
                 "status": "pending",
                 "created_at": datetime.now().isoformat(timespec="seconds"),
-            }
+            })
             todos.append(todo)
             save_todos(todos)
             return self._json({"ok": True, "todo": todo, "state": self._state()})
@@ -343,6 +433,185 @@ class Handler(BaseHTTPRequestHandler):
                 "term_start": meta.get("term_start", ""),
                 "weeks_total": meta.get("weeks_total", 0),
             })
+        if path == "/api/plan/apply":
+            # 采纳某天的能量规划：placements=排程、deferrals=软线顺延（可只给其一）
+            todos = load_todos()
+            day = self._day_from(body.get("date"), date.today())
+            plan0 = plan_engine.plan_day(todos, day=day)
+            placements = body.get("placements")
+            deferrals = body.get("deferrals")
+            if placements is not None and not isinstance(placements, list):
+                return self._json({"ok": False, "error": "placements 需为数组"}, 400)
+            if deferrals is not None and not isinstance(deferrals, list):
+                return self._json({"ok": False, "error": "deferrals 需为数组"}, 400)
+            todos, applied_p = plan_engine.apply_placements(
+                todos, plan0,
+                task_ids=[str(x) for x in placements] if placements is not None else None)
+            todos, applied_d = plan_engine.apply_deferrals(
+                todos, plan0,
+                task_ids=[str(x) for x in deferrals] if deferrals is not None else None)
+            save_todos(todos)
+            return self._json({
+                "ok": True,
+                "placed": len(applied_p),
+                "deferred": len(applied_d),
+                "state": self._state(),
+            })
+        if path == "/api/plan/move":
+            # 用户拖拽/手动调整任务时间：落库并记录偏好
+            todos = load_todos()
+            item_id = str(body.get("id") or "")
+            if not item_id:
+                return self._json({"ok": False, "error": "缺少 id"}, 400)
+            todos, rec = plan_engine.record_move(
+                todos, item_id,
+                str(body.get("date") or ""),
+                body.get("time") or None,
+                body.get("end_time") or None)
+            if rec is None:
+                return self._json({"ok": False, "error": "事项不存在"}, 404)
+            save_todos(todos)
+            return self._json({"ok": True, "record": rec, "state": self._state()})
+        if path == "/api/shield":
+            # 智能挡箭牌：粘贴外部任务 → 负载评估 + 建议回复（AI 可用时用 LLM 润色）
+            text = str(body.get("text") or "").strip()
+            if not text:
+                return self._json({"ok": False, "error": "请粘贴要评估的外部任务描述"}, 400)
+            day = self._day_from(body.get("date"), date.today())
+            res = plan_shield.evaluate_intrusion(load_todos(), text, day=day)
+            if res.get("ok"):
+                cfg = ai_gateway.load_config()
+                if ai_gateway.is_ready(cfg):
+                    try:
+                        enhanced = plan_llm.refusal_copy(cfg, {
+                            "task": res.get("title"),
+                            "load": (res.get("load") or {}).get("level"),
+                            "undone": (res.get("load") or {}).get("undone_todos"),
+                            "energy": (res.get("load") or {}).get("planned_energy"),
+                            "reasons": (res.get("load") or {}).get("reasons"),
+                            "style": str(body.get("style") or "")[:60],
+                        })
+                        if enhanced:
+                            res["copy"] = enhanced
+                            res["copy_method"] = "ai"
+                    except ai_gateway.AiGatewayError:
+                        pass  # 保持规则话术兜底
+            return self._json(res, 400 if not res.get("ok") else 200)
+        if path == "/api/plan/classify":
+            # 截止类型分类：LLM 优先，规则兜底（返回与任务库一致的结果）
+            todos = load_todos()
+            item_id = str(body.get("id") or "")
+            todo = next((t for t in todos if t.get("id") == item_id), None)
+            if todo is None:
+                return self._json({"ok": False, "error": "事项不存在"}, 404)
+            cfg = ai_gateway.load_config()
+            out = {"id": item_id}
+            method = "rule"
+            try:
+                got = plan_llm.ddl_classify(
+                    cfg, "{} {}".format(todo.get("title"), todo.get("deliverable") or ""))
+            except ai_gateway.AiGatewayError:
+                got = None
+            if got:
+                out.update(got)
+                method = "ai"
+            else:
+                norm = plan_fields.normalize_task(todo)
+                out["deadline_type"] = norm["deadline_type"]
+                out["ddl_float_days"] = norm["ddl_float_days"]
+            out["method"] = method
+            return self._json({"ok": True, **out})
+        if path == "/api/decompose":
+            # LLM 任务拆解（预览）：返回候选子任务，不直接入库
+            todos = load_todos()
+            item_id = str(body.get("id") or "")
+            todo = next((t for t in todos if t.get("id") == item_id), None)
+            if todo is None:
+                return self._json({"ok": False, "error": "事项不存在"}, 404)
+            cfg = ai_gateway.load_config()
+            reason = None
+            subs = None
+            if not ai_gateway.is_ready(cfg):
+                reason = "AI 未启用或配置不完整（需 API Key + 模型），暂无法拆解"
+            elif not plan_decompose.needs_decomposition(todo):
+                reason = "该任务预计耗能不高，暂不需要拆解"
+            else:
+                try:
+                    subs = plan_decompose.ai_decompose(cfg, todo)
+                    if not subs:
+                        reason = "模型未给出可用的里程碑子任务，按整块任务处理"
+                except ai_gateway.AiGatewayError as exc:
+                    reason = "AI 调用失败：{}".format(str(exc)[:120])
+            if subs:
+                plan_decompose.cache_subtasks(item_id, subs)
+            return self._json({
+                "ok": True,
+                "id": item_id,
+                "decomposed": bool(subs),
+                "subtasks": subs or [],
+                "reason": reason,
+            })
+        if path == "/api/decompose/accept":
+            # 采纳拆解结果：把缓存的子任务写入待办池（parent_id 关联父任务）
+            todos = load_todos()
+            item_id = str(body.get("id") or "")
+            todo = next((t for t in todos if t.get("id") == item_id), None)
+            if todo is None:
+                return self._json({"ok": False, "error": "事项不存在"}, 404)
+            subs = plan_decompose.cached_subtasks(item_id)
+            if not subs:
+                return self._json({
+                    "ok": False,
+                    "error": "拆解结果已过期或不存在，请先重新拆解",
+                }, 400)
+            created = []
+            for s in subs:
+                child = plan_decompose.child_todo(todo, s)
+                todos.append(child)
+                created.append(child)
+            save_todos(todos)
+            plan_decompose.cache_subtasks(item_id, [])  # 一次性采纳，作废缓存
+            return self._json({
+                "ok": True,
+                "created": len(created),
+                "parent_id": item_id,
+                "state": self._state(),
+            })
+        if path == "/api/feedback":
+            # 任务完成后的精力反馈：校准精力曲线并记录历史
+            todos = load_todos()
+            item_id = str(body.get("id") or "")
+            todo = next((t for t in todos if t.get("id") == item_id), None)
+            if todo is None:
+                return self._json({"ok": False, "error": "事项不存在"}, 404)
+            rating = str(body.get("rating") or "ok").strip().lower()
+            if rating not in ("easy", "ok", "tough"):
+                return self._json({"ok": False, "error": "rating 需为 easy/ok/tough"}, 400)
+            hm = plan_fields.hm_to_min(str(todo.get("time") or ""))
+            hour = (hm // 60) if hm is not None else datetime.now().hour
+            try:
+                d = date.fromisoformat(str(todo.get("date") or ""))
+            except ValueError:
+                d = date.today()
+            prof = plan_energy.load_profile()
+            prof2 = plan_energy.record_feedback(hour, rating, prof)
+            plan_energy.save_profile(prof2)
+            plan_store.append_event({
+                "type": "rating",
+                "task_id": item_id,
+                "title": str(todo.get("title") or ""),
+                "date": d.isoformat(),
+                "weekday": d.weekday(),
+                "hour": hour,
+                "bucket": plan_risk.bucket_of(hour),
+                "rating": rating,
+            })
+            return self._json({
+                "ok": True,
+                "rating": rating,
+                "hour": hour,
+                "energy": prof2,
+            })
         m = re.fullmatch(r"/api/ai/pending/([^/]+)/(accept|reject)", urlparse(self.path).path)
         if m:
             item_id = m.group(1)
@@ -380,6 +649,7 @@ class Handler(BaseHTTPRequestHandler):
                             "ok": False,
                             "error": "该结果没有明确日期，无法采纳到日程；请采纳到待办，再到待办页手动规划到某一天",
                         }, 400)
+                todo = _finalize_todo(todo)
                 todos.append(todo)
                 save_todos(todos)
             ai_gateway.remove_pending(item_id)
@@ -401,12 +671,13 @@ class Handler(BaseHTTPRequestHandler):
         todo = next((t for t in todos if t.get("id") == m.group(1)), None)
         if todo is None:
             return self._json({"ok": False, "error": "事项不存在"}, 404)
+        was_done = todo.get("status") == "done"
         for k, v in body.items():
             if k not in ALLOWED_FIELDS:
                 continue
             if k in ("date", "time", "end_time", "deadline", "deadline_time") and v in (None, ""):
                 v = None
-            if k == "status" and v not in ("pending", "done"):
+            if k == "status" and v not in ("pending", "done", "deferred"):
                 continue
             if k == "kind":
                 v = kinds.valid_kind(v) or todo.get("kind")
@@ -414,15 +685,22 @@ class Handler(BaseHTTPRequestHandler):
                     continue
             if k == "duration_min" and not isinstance(v, int):
                 continue
+            if k in ("energy_cost", "deliverable", "deadline_type",
+                     "ddl_float_days", "parent_id"):
+                v = _norm_planner_field(k, v)
+                if v is _SKIP_FIELD:
+                    continue
             todo[k] = v
             if k == "date" and not v:
                 todo["time"] = None
                 todo["end_time"] = None
-        todo = kinds.normalize_item(
+        todo = _finalize_todo(kinds.normalize_item(
             todo,
             kind=todo.get("kind"),
             raw=todo.get("raw") or todo.get("title") or "",
-        )
+        ))
+        if todo.get("status") == "done" and not was_done:
+            plan_risk.record_done(todo)
         save_todos(todos)
         return self._json({"ok": True, "todo": todo, "state": self._state()})
 
