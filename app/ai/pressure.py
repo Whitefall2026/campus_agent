@@ -613,19 +613,22 @@ def today_brief(todos: list[dict] | None = None,
         fixed_today = _has_fixed_time(todo) and _parse_date(todo.get("date")) == today
         due_today = deadline == today
         overdue = deadline is not None and deadline < today
-        if not (fixed_today or due_today or overdue):
+        high_priority = _priority_weight(todo) > 1.0 and _is_todo(todo)
+        if not (fixed_today or due_today or overdue or high_priority):
             continue
         if overdue:
             reason = "已逾期，先决定今天是否处理"
         elif due_today:
             reason = "今天截止，优先留出时间"
+        elif high_priority:
+            reason = "高优先级，趁还有余量先推进一点"
         else:
             reason = "今天已有固定安排"
         priorities.append({
             "id": todo.get("id"), "title": str(todo.get("title") or "未命名事项"),
             "reason": reason, "deadline": todo.get("deadline"),
-            "time": todo.get("time"), "kind": todo.get("kind"),
-            "rank": 0 if overdue else 1 if due_today else 2,
+            "time": todo.get("time"), "kind": todo.get("kind"), "is_todo": _is_todo(todo),
+            "rank": 0 if overdue else 1 if due_today else 2 if high_priority else 3,
         })
     priorities.sort(key=lambda x: (x["rank"], x.get("time") or "99:99", x["title"]))
 
@@ -645,9 +648,13 @@ def today_brief(todos: list[dict] | None = None,
         if overlap_end > overlap_start:
             occupied += int((overlap_end - overlap_start).total_seconds() // 60)
     available = max(0, int((day_end - cursor).total_seconds() // 60) - occupied)
+    starter = next((x for x in priorities if x.get("is_todo")), None)
+    if starter:
+        starter = {**starter, "action": "先给它 25 分钟；不要求一次做完。"}
     return {
         "today": today.isoformat(), "pressure": pressure,
         "free_minutes": available, "priority_items": priorities[:3],
+        "starter": starter,
         "message": (
             "先完成最重要的一件，剩下的时间由你自己决定。"
             if priorities else "今天没有迫在眉睫的事项，留一点空白给自己。"

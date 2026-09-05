@@ -178,6 +178,10 @@ function renderTodayCompass(data) {
   $("#todayPriority").innerHTML = items.length
     ? items.map((x) => `<div class="today-priority-item"><b>${esc(x.title)}</b><span>${esc(x.reason)}</span></div>`).join("")
     : '<div class="today-priority-empty">没有必须立刻处理的事。</div>';
+  const starter = data.starter;
+  $("#starterStep").innerHTML = starter
+    ? `<span>只做下一步</span><b>${esc(starter.title)}</b><small>${esc(starter.reason)}；${esc(starter.action)}</small>`
+    : '<span>今天无需强行安排</span><small>如果想做点什么，挑一件最轻松的小事开始就好。</small>';
 }
 
 async function loadTodayCompass() {
