@@ -92,7 +92,11 @@ def normalize_item(fields: dict | None, kind: str | None = None,
         if f.get("deadline") and not f.get("deadline_time") and f.get("time"):
             f["deadline_time"] = f.get("time")
             f["time"] = None
-        # 待办保留原样即可，时间轴不消费 kind=todo 的 date/time
+        # kind=todo 不允许携带排期日期/时间：要排期请切 kind=schedule。
+        # 否则会出现“有 date/time 但不上日程、也不参与规划”的夹生数据。
+        f["date"] = None
+        f["time"] = None
+        f["end_time"] = None
         return f
 
     # schedule：必须保留一个日期供时间轴展示；没有日期但有 time 时给提示，由用户补日期

@@ -1328,11 +1328,17 @@ $("#planEntries").addEventListener("click", async (e) => {
       await loadPlanner(true);
     } catch (err) { alert(err.message); }
   } else if (btn.dataset.plan === "skip") {
-    const entry = (state.plan && state.plan.plan.entries || [])
-      .find((x) => x.task_id === btn.dataset.id);
-    if (entry) await planPreferenceFeedback("reject", [entry]);
-    const card = btn.closest(".plan-entry");
-    if (card) card.remove();
+    try {
+      const entry = (state.plan && state.plan.plan.entries || [])
+        .find((x) => x.task_id === btn.dataset.id);
+      await api("/api/plan/skip", {
+        method: "POST",
+        body: { date: state.planDay, task_id: btn.dataset.id },
+      });
+      if (entry) await planPreferenceFeedback("reject", [entry]);
+      const card = btn.closest(".plan-entry");
+      if (card) card.remove();
+    } catch (err) { alert(err.message); }
   }
 });
 $("#planDeferrals").addEventListener("click", async (e) => {

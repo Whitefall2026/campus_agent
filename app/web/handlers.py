@@ -504,6 +504,20 @@ class Handler(BaseHTTPRequestHandler):
                 "deferred": len(applied_d),
                 "state": self._state(),
             })
+        if path == "/api/plan/skip":
+            # 用户今天跳过某条建议：记录后当天不再重复提议
+            todos = load_todos()
+            task_id = str(body.get("task_id") or "")
+            day_s = str(body.get("date") or "")
+            todo = next((t for t in todos if t.get("id") == task_id), None)
+            if todo is None:
+                return self._json({"ok": False, "error": "事项不存在"}, 404)
+            skipped = [str(x) for x in (todo.get("plan_skipped_dates") or [])]
+            if day_s and day_s not in skipped:
+                skipped.append(day_s)
+            todo["plan_skipped_dates"] = skipped
+            save_todos(todos)
+            return self._json({"ok": True, "state": self._state()})
         if path == "/api/plan/move":
             # 用户拖拽/手动调整任务时间：落库并记录偏好
             todos = load_todos()
