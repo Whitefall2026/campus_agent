@@ -440,23 +440,6 @@ footer { text-align: center; color: var(--ink-2); font-size: 12px; padding: 16px
 .curve-strip .cell.z { background: rgba(148,163,184,0.12); }
 .curve-strip .cell.z i { background: rgba(148,163,184,0.4); }
 
-/* 挡箭牌 */
-.shield-card textarea {
-  width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px;
-  padding: 9px 11px; font: inherit; font-size: 13px; resize: vertical;
-  color: var(--ink); background: #fafbfe; outline: none; min-height: 46px;
-}
-.shield-card textarea:focus { border-color: var(--accent); background: #fff; }
-.shield-result { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.7; }
-.shield-result.light { background: #ecfdf5; border: 1px solid #a7f3d0; }
-.shield-result.moderate { background: #fffbeb; border: 1px solid #fde68a; }
-.shield-result.heavy { background: #fef2f2; border: 1px solid #fecaca; }
-.shield-verdict { font-weight: 600; margin-bottom: 4px; }
-.shield-copy { color: var(--ink); }
-.shield-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.shield-actions button { font-size: 12px; }
-.shield-err { color: var(--danger); font-size: 13px; padding: 4px 0; }
-
 /* 排程卡片 */
 .plan-card .card-head { flex-wrap: wrap; gap: 8px; }
 .plan-empty {
