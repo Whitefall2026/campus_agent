@@ -186,7 +186,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def _plan_payload(self, todos, day):
         """当日规划 + 风险评估 + 负载指标（plan/risk/shield 三合一）。"""
-        plan0 = plan_engine.plan_day(todos, day=day)
+        state = ai_profile.latest_state()
+        raw_profile = plan_energy.load_profile()
+        current_day = day == date.today()
+        profile = (plan_energy.profile_for_current_state(raw_profile, state)
+                   if current_day else raw_profile)
+        # 只给「主动推进」留有限额；硬截止任务不受此限，避免系统替用户漏事。
+        cap_by_energy = {"low": 120, "medium": 180, "high": 240}
+        cap = cap_by_energy.get(str(state.get("energy") or "").lower(), 180) if current_day else None
+        plan0 = plan_engine.plan_day(todos, day=day, profile=profile,
+                                    focus_cap_min=cap)
+        plan0.setdefault("meta", {}).update({
+            "state_energy": state.get("energy") or "unknown",
+            "state_multiplier": profile.get("state_multiplier", 1.0),
+            "focus_cap_min": cap,
+        })
         seed = day.year * 10000 + day.month * 100 + day.day
         plan = plan_risk.plan_with_risk(plan0, seed=seed)
         load = plan_shield.load_metrics(todos, day=day, plan=plan0)
@@ -211,13 +225,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._plan_payload(load_todos(), day))
         if path == "/api/energy":
             prof = plan_energy.load_profile()
+            state = ai_profile.latest_state()
+            effective = plan_energy.profile_for_current_state(prof, state)
             return self._json({
                 "ok": True,
                 "energy": {
                     "version": int(prof.get("version") or 1),
                     "updated_at": prof.get("updated_at"),
-                    "hours": prof.get("hours") or plan_energy.DEFAULT_HOUR_COEF,
-                    "available_points": round(plan_energy.available_total(prof), 2),
+                    "hours": effective.get("hours") or plan_energy.DEFAULT_HOUR_COEF,
+                    "available_points": round(plan_energy.available_total(effective), 2),
+                    "state_level": effective.get("state_level", "unknown"),
+                    "state_multiplier": effective.get("state_multiplier", 1.0),
                 },
             })
         if path == "/api/wechat/status":

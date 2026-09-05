@@ -34,6 +34,7 @@ DEFAULT_HOUR_COEF = [
 COEF_MIN, COEF_MAX = 0.1, 1.8
 EMA_RATE = 0.15          # 一次反馈更新的学习率
 FEEDBACK_DELTA = {"easy": 0.10, "ok": 0.0, "tough": -0.10}
+STATE_MULTIPLIER = {"low": 0.65, "medium": 1.0, "high": 1.15}
 
 PLAN_DAY_START = 7 * 60    # 07:00
 PLAN_DAY_END = 23 * 60     # 23:00（不含）
@@ -103,6 +104,21 @@ def block_points(start_min: int, dur_min: int,
 def available_total(profile: dict | None = None) -> float:
     """一天（07:00~23:00）无课程占用时的理论总能量（点数）。"""
     return sum(coefficient_at(h, profile) for h in range(PLAN_DAY_START // 60, PLAN_DAY_END // 60))
+
+
+def profile_for_current_state(profile: dict | None, state: dict | None) -> dict:
+    """将一次「此刻精力」自评临时应用到今天的曲线。
+
+    长期曲线只由完成反馈校准；即时状态只影响当日建议，避免一次疲惫
+    把用户的长期画像永久拉低。
+    """
+    base = profile or default_profile()
+    level = str((state or {}).get("energy") or "unknown").lower()
+    multiplier = STATE_MULTIPLIER.get(level, 1.0)
+    hours = [round(float(v) * multiplier, 3) if float(v) > 0 else 0.0
+             for v in (base.get("hours") or DEFAULT_HOUR_COEF)]
+    return {**base, "hours": hours, "state_level": level,
+            "state_multiplier": multiplier}
 
 
 def record_feedback(hour_float, rating: str, profile: dict | None = None) -> dict:

@@ -172,6 +172,7 @@ def plan_day(
     profile: dict | None = None,
     include_courses: bool = True,
     seed: int | None = None,
+    focus_cap_min: int | None = None,
 ) -> dict:
     """为某天生成完整规划方案（纯函数，不落库）。
 
@@ -189,6 +190,7 @@ def plan_day(
     entries, warnings = [], []
     rest_marks = []
     remain = list(cands)
+    focus_minutes = 0
 
     # —— 贪心放置 ——
     for run in runs:
@@ -198,6 +200,14 @@ def plan_day(
             # 从最高优先级向下扫描：找第一个“放得下”的任务
             for idx, task in enumerate(remain):
                 dur = int(task.get("duration_min") or 60)
+                # 除了今天硬截止的事，不把用户的空白时间全部占满。
+                # cap 由调用方按当下精力给出；None 保持旧行为，便于复用。
+                hard_today = (
+                    task.get("deadline_type") == "hard"
+                    and str(task.get("deadline") or "") == iso
+                )
+                if focus_cap_min is not None and not hard_today and focus_minutes + dur > focus_cap_min:
+                    continue
                 limit = _deadline_limit_min(task, day)
                 if limit is not None and cursor + dur > limit:
                     continue
@@ -245,6 +255,7 @@ def plan_day(
                     "copy": TOLERANCE_COPY.format(cost=x, title=task.get("title")),
                 })
             remain.pop(idx)
+            focus_minutes += dur
             cursor = end_min
         if not remain:
             break
@@ -259,6 +270,9 @@ def plan_day(
         "available_points": round(total_pts, 2),
         "planned_points": round(used_pts, 2),
         "planned_ratio": round(used_pts / total_pts, 3) if total_pts else 0.0,
+        "focus_minutes": focus_minutes,
+        "focus_cap_min": focus_cap_min,
+        "protected_free_minutes": max(0, sum(r["end"] - r["start"] for r in runs) - focus_minutes),
     }
 
     # 相邻的休息/机动格子合并成整段（避免逐格刷屏）

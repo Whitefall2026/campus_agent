@@ -190,6 +190,8 @@ document.querySelectorAll("[data-energy]").forEach((btn) => btn.addEventListener
     document.querySelectorAll("[data-energy]").forEach((b) => b.classList.toggle("selected", b === btn));
     await loadAiYou();
     await loadTodayCompass();
+    state.planSig = null;
+    if (state.page === "planner") await loadPlanner(true);
   } catch (err) { alert(err.message); }
 }));
 
@@ -1168,12 +1170,17 @@ function renderPlannerPage() {
   fg.style.strokeDasharray = RING_CIRC;
   fg.style.strokeDashoffset = RING_CIRC * (1 - ratio);
   $("#energyHint").textContent = b.free_runs
-    ? `${b.free_runs} 段空闲 · 容差 ×${plan.meta.tolerance}`
+    ? `${b.free_runs} 段空闲 · ${plan.meta.focus_cap_min ? `今天建议主动推进不超过 ${plan.meta.focus_cap_min} 分钟` : "按精力曲线安排"}`
     : "这一天没有空闲时段";
   $("#energyMeta").innerHTML =
     `可用 <b>${avail}</b> 点 · 已排 <b>${used}</b> 点` +
     `<br>占用 <b>${Math.round((b.planned_ratio || 0) * 100)}%</b>` +
+    `<br>保留 <b>${Math.floor((b.protected_free_minutes || 0) / 60)} 小时${(b.protected_free_minutes || 0) % 60 ? " " + ((b.protected_free_minutes || 0) % 60) + " 分" : ""}</b>自由空白` +
     `<br><span style="font-size:11px">1 点 ≈ 状态好时的 30 分钟专注</span>`;
+  const levelLabel = { low: "低", medium: "中", high: "高" }[plan.meta.state_energy];
+  if (levelLabel) {
+    $("#energyMeta").innerHTML += `<br><span style="font-size:11px">已按你刚记录的${levelLabel}精力调整今日建议</span>`;
+  }
 
   // ---- 精力曲线 ----
   const hours = (state.energy && state.energy.hours) || [];
