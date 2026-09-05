@@ -595,7 +595,8 @@ def calculate_pressure(
 
 def today_brief(todos: list[dict] | None = None,
                 today: date | None = None,
-                now: datetime | None = None) -> dict:
+                now: datetime | None = None,
+                user_state: dict | None = None) -> dict:
     """生成面向用户的「今天先做什么，还剩多少可自由安排时间」。
 
     这是一个确定性的摘要：不把尚未确认的待办偷偷塞进日程，而是先把
@@ -649,14 +650,21 @@ def today_brief(todos: list[dict] | None = None,
             occupied += int((overlap_end - overlap_start).total_seconds() // 60)
     available = max(0, int((day_end - cursor).total_seconds() // 60) - occupied)
     starter = next((x for x in priorities if x.get("is_todo")), None)
+    level = str((user_state or {}).get("energy") or "unknown")
+    starter_minutes = {"low": 5, "medium": 15, "high": 25}.get(level, 15)
     if starter:
-        starter = {**starter, "action": "先给它 25 分钟；不要求一次做完。"}
+        starter = {
+            **starter,
+            "minutes": starter_minutes,
+            "action": f"先给它 {starter_minutes} 分钟；不要求一次做完。",
+        }
     return {
         "today": today.isoformat(), "pressure": pressure,
         "free_minutes": available, "priority_items": priorities[:3],
         "starter": starter,
         "message": (
-            "先完成最重要的一件，剩下的时间由你自己决定。"
-            if priorities else "今天没有迫在眉睫的事项，留一点空白给自己。"
+            "我只帮你守住必要的承诺，不会自动占用其余空白。"
+            if priorities else "今天没有迫在眉睫的事项，不必为待办感到内疚。"
         ),
+        "freedom_promise": "这段未被承诺占用的时间属于你；系统不会自动把它塞进计划。",
     }

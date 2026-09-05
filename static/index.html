@@ -43,9 +43,9 @@
         <div><h2>☀️ 今天，先把主动权留给自己</h2><span class="hint" id="todayMessage">正在整理今天的安排…</span></div>
         <div class="energy-check" aria-label="记录当前精力">
           <span>此刻精力</span>
-          <button data-energy="low" class="ghost small">低</button>
-          <button data-energy="medium" class="ghost small">中</button>
-          <button data-energy="high" class="ghost small">高</button>
+          <button data-energy="low" class="ghost small">没力气</button>
+          <button data-energy="medium" class="ghost small">一般</button>
+          <button data-energy="high" class="ghost small">状态好</button>
         </div>
       </div>
       <div class="today-compass-body">
@@ -113,6 +113,8 @@
       <div class="card-head"><h2>⏰ 当日截止的待办</h2></div>
       <div id="dueList"></div>
     </div>
+
+    <div class="freedom-note hidden" id="scheduleFreedom"></div>
 
     <div class="card timeline-card">
       <div class="timeline" id="scheduleTimeline"></div>

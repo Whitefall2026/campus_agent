@@ -303,6 +303,7 @@ textarea:focus {
 .empty-icon { font-size: 36px; }
 .empty-day p { margin: 0; }
 .due-card { border-color: #f3dfae; }
+.freedom-note { margin: 0 0 14px; padding: 10px 13px; border-radius: 12px; background: #f5fbf8; border: 1px solid #ccebd8; color: #2f6b4c; font-size: 13px; }
 .due-list-item { font-size: 13px; padding: 6px 2px; display: flex; gap: 8px; }
 
 /* ---------- 待办页 ---------- */

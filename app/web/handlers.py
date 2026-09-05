@@ -257,7 +257,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/ai/profile":
             return self._json({"ok": True, **ai_context.profile_summary()})
         if path == "/api/ai/today":
-            return self._json({"ok": True, **ai_pressure.today_brief(load_todos())})
+            return self._json({"ok": True, **ai_pressure.today_brief(
+                load_todos(), user_state=ai_profile.latest_state())})
         if path == "/api/chat/history":
             return self._json({"ok": True, "messages": ai_chat.public_history()})
         if path == "/api/courses":

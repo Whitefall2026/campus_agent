@@ -172,6 +172,7 @@ function formatFreeTime(minutes) {
 }
 
 function renderTodayCompass(data) {
+  state.todayBrief = data;
   $("#todayMessage").textContent = data.message || "今天的节奏，由你决定。";
   $("#freeTime").textContent = formatFreeTime(Number(data.free_minutes || 0));
   const items = data.priority_items || [];
@@ -182,6 +183,7 @@ function renderTodayCompass(data) {
   $("#starterStep").innerHTML = starter
     ? `<span>只做下一步</span><b>${esc(starter.title)}</b><small>${esc(starter.reason)}；${esc(starter.action)}</small>`
     : '<span>今天无需强行安排</span><small>如果想做点什么，挑一件最轻松的小事开始就好。</small>';
+  if (state.page === "schedule") renderSchedulePage();
 }
 
 async function loadTodayCompass() {
@@ -682,6 +684,14 @@ function renderSchedulePage() {
   const dayData = (state.data.timeline || []).find((d) => d.date === day) || { date: day, items: [], ddl_items: [] };
   const items = dayData.items || [];
   const due = dayData.ddl_items || [];
+  const freedom = $("#scheduleFreedom");
+  const brief = state.todayBrief;
+  if (day === todayISO() && brief) {
+    freedom.classList.remove("hidden");
+    freedom.innerHTML = `🔓 <b>未被安排的时间</b>：${esc(formatFreeTime(brief.free_minutes || 0))}。${esc(brief.freedom_promise || "")}`;
+  } else {
+    freedom.classList.add("hidden");
+  }
   if (due.length) {
     $("#dueCard").classList.remove("hidden");
     $("#dueList").innerHTML = due.map((t) =>
