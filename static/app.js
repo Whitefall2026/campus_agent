@@ -40,6 +40,7 @@ const state = {
   planSig: "",
   energy: null,     // /api/energy {hours, available_points}
   ratedIds: new Set(),
+  aiPlanTried: {},
 };
 
 /* ---------------- 基础工具 ---------------- */
@@ -1114,9 +1115,35 @@ async function loadPlanner(force) {
     state.energy = energyRes.energy || null;
     state.planSig = sig;
     renderPlannerPage();
+    if (day === todayISO() && !state.aiPlanTried[day]
+        && (planRes.plan.meta.candidates || 0) > 0
+        && !planRes.plan.meta.ai_guided) {
+      state.aiPlanTried[day] = true;
+      await runAiPlan();
+    }
   } catch (err) {
     console.error("loadPlanner failed", err);
     $("#planHint").textContent = "加载失败：" + err.message;
+  } finally {
+    setPlannerBusy(false);
+  }
+}
+
+async function runAiPlan() {
+  setPlannerBusy(true);
+  const day = state.planDay || todayISO();
+  try {
+    const res = await api("/api/plan/ai", {
+      method: "POST",
+      body: { date: day },
+    });
+    state.plan = res;
+    state.planDay = day;
+    state.planSig = day;
+    renderPlannerPage();
+  } catch (err) {
+    console.error("AI plan failed", err);
+    $("#planHint").textContent = "AI 排程失败：" + err.message;
   } finally {
     setPlannerBusy(false);
   }
@@ -1295,7 +1322,7 @@ $("#planToday").addEventListener("click", () => { state.planDay = todayISO(); lo
 $("#planPick").addEventListener("change", (e) => {
   if (e.target.value) { state.planDay = e.target.value; loadPlanner(true); }
 });
-$("#planRecomputeBtn").addEventListener("click", () => loadPlanner(true));
+$("#planRecomputeBtn").addEventListener("click", () => runAiPlan());
 
 $("#planApplyAllBtn").addEventListener("click", async () => {
   const plan = state.plan && state.plan.plan;
@@ -1308,7 +1335,7 @@ $("#planApplyAllBtn").addEventListener("click", async () => {
     });
     await planPreferenceFeedback("accept", plan.entries || []);
     await refresh();
-    await loadPlanner(true);
+    await runAiPlan();
   } catch (err) { alert(err.message); }
 });
 
@@ -1325,7 +1352,7 @@ $("#planEntries").addEventListener("click", async (e) => {
         .find((x) => x.task_id === btn.dataset.id);
       if (entry) await planPreferenceFeedback("accept", [entry]);
       await refresh();
-      await loadPlanner(true);
+      await runAiPlan();
     } catch (err) { alert(err.message); }
   } else if (btn.dataset.plan === "skip") {
     try {
@@ -1353,7 +1380,7 @@ $("#planDeferrals").addEventListener("click", async (e) => {
         body: { date: state.planDay, deferrals: [btn.dataset.id] },
       });
       await refresh();
-      await loadPlanner(true);
+      await runAiPlan();
     } catch (err) { alert(err.message); }
   }
 });

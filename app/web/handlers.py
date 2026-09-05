@@ -188,8 +188,12 @@ class Handler(BaseHTTPRequestHandler):
     def _state(self):
         return build_state(load_todos())
 
-    def _plan_payload(self, todos, day):
-        """当日规划 + 风险评估 + 负载指标（plan/risk/shield 三合一）。"""
+    def _plan_payload(self, todos, day, ai: bool = False):
+        """当日规划 + 风险评估 + 负载指标。
+
+        ai=False：浏览模式，返回缓存/引擎快照（翻页秒开，不触发 AI）；
+        ai=True：AI 排程模式（点“重新规划”时调用），结果写入缓存。
+        """
         iso = day.isoformat()
         try:
             mtime = os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
@@ -197,34 +201,37 @@ class Handler(BaseHTTPRequestHandler):
             mtime = 0
         key = (iso, mtime)
         hit = _PLAN_CACHE.get(key)
-        if hit and time.time() - hit[0] < _PLAN_TTL:
+        if not ai and hit and time.time() - hit[0] < _PLAN_TTL:
             return copy.deepcopy(hit[1])
-        guide = ai_planner.guide_day_order(todos, day.isoformat())
-        if guide.get("order"):
-            plan0 = plan_engine.plan_day(
-                todos, day=day, candidate_order=guide["order"],
-                ai_placements=guide.get("placements") or None)
-            plan0["meta"]["ai_guided"] = True
-            plan0["meta"]["ai_rounds"] = 1
-            if guide.get("note"):
-                plan0["meta"]["ai_note"] = guide["note"]
-            if guide.get("advice"):
-                plan0["meta"]["ai_advice"] = guide["advice"]
-            rejected = plan0.get("meta", {}).get("ai_rejected") or []
-            if rejected:
-                guide2 = ai_planner.guide_day_order(
-                    todos, day.isoformat(), rejections=rejected)
-                if guide2.get("placements") or guide2.get("order"):
-                    plan0 = plan_engine.plan_day(
-                        todos, day=day,
-                        candidate_order=guide2.get("order") or guide.get("order"),
-                        ai_placements=guide2.get("placements") or None)
-                    plan0["meta"]["ai_guided"] = True
-                    plan0["meta"]["ai_rounds"] = 2
-                    if guide2.get("note"):
-                        plan0["meta"]["ai_note"] = guide2["note"]
-                    if guide2.get("advice"):
-                        plan0["meta"]["ai_advice"] = guide2["advice"]
+        if ai:
+            guide = ai_planner.guide_day_order(todos, day.isoformat())
+            if guide.get("order"):
+                plan0 = plan_engine.plan_day(
+                    todos, day=day, candidate_order=guide["order"],
+                    ai_placements=guide.get("placements") or None)
+                plan0["meta"]["ai_guided"] = True
+                plan0["meta"]["ai_rounds"] = 1
+                if guide.get("note"):
+                    plan0["meta"]["ai_note"] = guide["note"]
+                if guide.get("advice"):
+                    plan0["meta"]["ai_advice"] = guide["advice"]
+                rejected = plan0.get("meta", {}).get("ai_rejected") or []
+                if rejected:
+                    guide2 = ai_planner.guide_day_order(
+                        todos, day.isoformat(), rejections=rejected)
+                    if guide2.get("placements") or guide2.get("order"):
+                        plan0 = plan_engine.plan_day(
+                            todos, day=day,
+                            candidate_order=guide2.get("order") or guide.get("order"),
+                            ai_placements=guide2.get("placements") or None)
+                        plan0["meta"]["ai_guided"] = True
+                        plan0["meta"]["ai_rounds"] = 2
+                        if guide2.get("note"):
+                            plan0["meta"]["ai_note"] = guide2["note"]
+                        if guide2.get("advice"):
+                            plan0["meta"]["ai_advice"] = guide2["advice"]
+            else:
+                plan0 = plan_engine.plan_day(todos, day=day)
         else:
             plan0 = plan_engine.plan_day(todos, day=day)
         seed = day.year * 10000 + day.month * 100 + day.day
@@ -480,6 +487,9 @@ class Handler(BaseHTTPRequestHandler):
                 "term_start": meta.get("term_start", ""),
                 "weeks_total": meta.get("weeks_total", 0),
             })
+        if path == "/api/plan/ai":
+            day = self._day_from(body.get("date"), date.today())
+            return self._json(self._plan_payload(load_todos(), day, ai=True))
         if path == "/api/plan/apply":
             # 采纳某天的能量规划：placements=排程、deferrals=软线顺延（可只给其一）
             todos = load_todos()
