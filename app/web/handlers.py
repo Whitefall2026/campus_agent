@@ -299,6 +299,13 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/api/ai/plan":
             return self._json(ai_planner.plan_open_todos())
+        if path == "/api/ai/plan/feedback":
+            items = body.get("items")
+            if not isinstance(items, list):
+                items = [body]
+            return self._json(ai_planner.record_plan_feedback(
+                str(body.get("action") or ""), items
+            ))
         if path == "/api/courses/import":
             name = str(body.get("name") or "")
             payload = str(body.get("data") or "")

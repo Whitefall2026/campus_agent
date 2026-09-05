@@ -25,7 +25,7 @@ const KIND = {
   todo: { label: "待办", color: "#b45309", icon: "✅", cls: "kind-todo" },
 };
 
-const PAGES = ["input", "schedule", "todos", "mine"];
+const PAGES = ["input", "schedule", "todos", "planner", "mine"];
 const state = {
   data: null,
   page: "input",
@@ -139,6 +139,7 @@ function showPage() {
   });
   if (state.page === "schedule") renderSchedulePage();
   if (state.page === "todos") renderTodosPage();
+  if (state.page === "planner") loadAiPlan();
   if (state.page === "mine") { refreshWx(); refreshAi(); }
 }
 
@@ -613,7 +614,10 @@ function planItemHTML(it) {
         ${it.reason ? `<div class="plan-reason">💡 ${esc(it.reason)}</div>` : ""}
       </div>
       ${it.date
-        ? `<button class="primary small" data-plan-act="apply" data-plan-id="${esc(it.id)}">采纳</button>`
+        ? `<div class="plan-ops">
+            <button class="primary small" data-plan-act="apply" data-plan-id="${esc(it.id)}">采纳</button>
+            <button class="ghost small" data-plan-act="reject" data-plan-id="${esc(it.id)}">拒绝</button>
+          </div>`
         : `<span class="badge">需手动安排</span>`}
     </div>`;
 }
@@ -635,12 +639,18 @@ async function loadAiPlan() {
   state.aiPlan = res.items || [];
   const method = res.method === "ai" ? "由 AI 生成" : "规则规划";
   $("#planHint").textContent = `${res.summary || ""}（${method}，采纳后进入日程）`;
-  if (!state.aiPlan.length) {
-    $("#planCard").classList.add("hidden");
-    return;
-  }
   $("#planCard").classList.remove("hidden");
   renderAiPlan();
+}
+
+async function planFeedback(action, items) {
+  try {
+    await api("/api/ai/plan/feedback", {
+      method: "POST",
+      body: { action, items },
+    });
+    await loadAiYou().catch(() => {});
+  } catch (_) { /* 反馈失败不影响主流程 */ }
 }
 
 async function applyPlanItem(id) {
@@ -651,6 +661,7 @@ async function applyPlanItem(id) {
       method: "PATCH",
       body: { kind: "schedule", date: it.date, time: it.time, end_time: it.end_time },
     });
+    await planFeedback("accept", [it]);
     state.aiPlan = state.aiPlan.filter((x) => x.id !== id);
     renderAiPlan();
     await refresh().catch(() => {});
@@ -658,6 +669,15 @@ async function applyPlanItem(id) {
   } catch (err) {
     alert(err.message);
   }
+}
+
+async function rejectPlanItem(id) {
+  const it = (state.aiPlan || []).find((x) => x.id === id);
+  if (!it) return;
+  await planFeedback("reject", [it]);
+  state.aiPlan = state.aiPlan.filter((x) => x.id !== id);
+  renderAiPlan();
+  if (!state.aiPlan.length) $("#planCard").classList.add("hidden");
 }
 
 $("#aiPlanBtn").addEventListener("click", async () => {
@@ -672,14 +692,16 @@ $("#aiPlanBtn").addEventListener("click", async () => {
 });
 $("#planList").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-plan-act]");
-  if (!btn || btn.dataset.planAct !== "apply") return;
-  applyPlanItem(btn.dataset.planId);
+  if (!btn) return;
+  if (btn.dataset.planAct === "apply") applyPlanItem(btn.dataset.planId);
+  if (btn.dataset.planAct === "reject") rejectPlanItem(btn.dataset.planId);
 });
 $("#planApplyAllBtn").addEventListener("click", async () => {
   const items = (state.aiPlan || []).filter((x) => x.date);
   if (!items.length) return;
   if (!confirm(`确认把 ${items.length} 条建议全部采纳进日程？`)) return;
   let ok = 0;
+  const applied = [];
   for (const it of items) {
     try {
       await api(`/api/todos/${it.id}`, {
@@ -687,8 +709,10 @@ $("#planApplyAllBtn").addEventListener("click", async () => {
         body: { kind: "schedule", date: it.date, time: it.time, end_time: it.end_time },
       });
       ok++;
+      applied.push(it);
     } catch (_) { /* 单条失败不中断 */ }
   }
+  if (applied.length) await planFeedback("accept", applied);
   state.aiPlan = [];
   $("#planCard").classList.add("hidden");
   await refresh().catch(() => {});

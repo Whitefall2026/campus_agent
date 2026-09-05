@@ -316,6 +316,7 @@ textarea:focus {
   padding: 10px 13px; margin-bottom: 8px; background: #fafbfe;
 }
 .plan-item-main { flex: 1; min-width: 0; }
+.plan-ops { display: flex; gap: 6px; }
 .plan-title { font-weight: 600; font-size: 13.5px; }
 .plan-when { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
 .plan-reason { color: var(--ink-2); font-size: 12px; margin-top: 2px; }

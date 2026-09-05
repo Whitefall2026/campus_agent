@@ -19,6 +19,7 @@
     <a href="#/input" data-page="input" class="nav-item active">💬 对话</a>
     <a href="#/schedule" data-page="schedule" class="nav-item">🗓️ 日程</a>
     <a href="#/todos" data-page="todos" class="nav-item">✅ 待办</a>
+    <a href="#/planner" data-page="planner" class="nav-item">🧭 计划</a>
     <a href="#/mine" data-page="mine" class="nav-item">👤 我的</a>
   </nav>
   <div class="stats" id="stats"></div>
@@ -115,9 +116,23 @@
         <button class="chip" data-todo-filter="overdue">已逾期</button>
         <span class="todo-filter-info" id="todoFilterInfo"></span>
       </div>
-      <button id="aiPlanBtn" class="primary small">✨ AI 规划</button>
       <button id="addTodoBtn" class="primary small">＋ 添加待办</button>
       <button id="clearTodoBtn" class="ghost small danger-text">清空待办</button>
+    </div>
+
+    <div id="todoList" class="todo-list"></div>
+  </section>
+
+  <!-- ===================== 页面四：计划 ===================== -->
+  <section class="page page-planner hidden" data-page="planner">
+    <div class="page-head">
+      <h1>计划</h1>
+      <p class="page-sub">AI 结合你的画像、精力曲线与当前处境，为未排期的待办给出排期建议；采纳/拒绝会让它越来越懂你</p>
+    </div>
+
+    <div class="todo-bar">
+      <span class="todo-filter-info">建议只进入预览，采纳后才写入日程</span>
+      <button id="aiPlanBtn" class="primary small">✨ AI 规划</button>
     </div>
 
     <div class="card plan-card hidden" id="planCard">
@@ -131,8 +146,6 @@
         <button id="planCloseBtn" class="ghost small">关闭</button>
       </div>
     </div>
-
-    <div id="todoList" class="todo-list"></div>
   </section>
 
   <!-- ===================== 页面四：我的 ===================== -->

@@ -18,6 +18,8 @@ from datetime import date, datetime, timedelta
 
 from app.ai import gateway as ai_gateway
 from app.ai import profile as user_profile
+from app.ai import evidence as user_evidence
+from app.ai import memory as user_memory
 from app.core import kinds
 from app.core import courses as course_mod
 from app.core.scheduler import SUGGEST_SLOTS, end_time_of
@@ -324,3 +326,77 @@ def plan_open_todos() -> dict:
     else:
         summary = f"按空闲时段与截止时间自动规划：{planned} 条可采纳。"
     return {"ok": True, "method": method, "summary": summary, "items": items}
+
+
+def _hour_bucket(time_s: str) -> str:
+    try:
+        h = int(str(time_s or "")[:2])
+    except (TypeError, ValueError):
+        return "unknown"
+    if 6 <= h < 12:
+        return "上午"
+    if 12 <= h < 18:
+        return "下午"
+    if 18 <= h < 24:
+        return "晚上"
+    return "unknown"
+
+
+def record_plan_feedback(action: str, items: list) -> dict:
+    """用户采纳/拒绝 AI 排期建议 → 写入画像偏好与长期记忆。
+
+    action: accept | reject
+    items: [{id, title, date, time, end_time}]
+    """
+    action = str(action or "").strip().lower()
+    if action not in ("accept", "reject"):
+        return {"ok": False, "error": "action 需为 accept 或 reject"}
+    items = [it for it in (items or []) if isinstance(it, dict)]
+    if not items:
+        return {"ok": False, "error": "缺少建议条目"}
+
+    profile = user_profile.load_profile()
+    prefs = profile.get("preferences") or {}
+    prefs = dict(prefs)
+    plan_pref = dict(prefs.get("planning") or {})
+    buckets = dict(plan_pref.get("buckets") or {})
+    plan_pref.setdefault("accepted", 0)
+    plan_pref.setdefault("rejected", 0)
+
+    lines = []
+    for it in items:
+        title = str(it.get("title") or "未命名待办")[:60]
+        when = " ".join(str(x) for x in (
+            it.get("date") or "", it.get("time") or ""
+        ) if x)
+        bucket = _hour_bucket(it.get("time"))
+        if action == "accept":
+            plan_pref["accepted"] = int(plan_pref["accepted"]) + 1
+            if bucket != "unknown":
+                buckets[bucket] = int(buckets.get(bucket, 0)) + 1
+            lines.append(f"采纳 AI 排期：{title} → {when}".strip())
+        else:
+            plan_pref["rejected"] = int(plan_pref["rejected"]) + 1
+            lines.append(f"拒绝 AI 排期建议：{title}（{when}）".strip())
+    plan_pref["buckets"] = buckets
+    prefs["planning"] = plan_pref
+    profile["preferences"] = prefs
+    user_profile.save_profile(profile)
+    for line in lines:
+        user_evidence.add_evidence(
+            "plan_" + action,
+            line,
+            {"kind": "plan_feedback"},
+        )
+
+    # 偏好收敛：采纳 ≥3 次且某时段明显占优时，写入长期记忆
+    accepted = int(plan_pref.get("accepted") or 0)
+    if accepted >= 3 and buckets:
+        top = max(buckets, key=lambda k: buckets[k])
+        if int(buckets[top]) >= 2 and buckets[top] == max(buckets.values()):
+            user_memory.add_memory(
+                "用户更倾向把任务安排在" + top,
+                importance=min(0.9, 0.45 + 0.08 * int(buckets[top])),
+                category="planning_preference",
+            )
+    return {"ok": True, "recorded": len(lines), "action": action}
