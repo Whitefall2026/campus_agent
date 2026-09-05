@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 from . import kinds
+from . import courses as course_mod
 
 WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
 CATEGORY_LABEL = {
@@ -109,8 +110,16 @@ def slot_conflicts(parsed: dict, todos: list[dict]) -> list[str]:
     if not parsed.get("date") or not parsed.get("time"):
         return []
     end = parsed.get("end_time") or end_time_of(parsed)
+    others = list(todos)
+    try:
+        others += [
+            e for e in course_mod.term_events()
+            if e.get("date") == parsed["date"]
+        ]
+    except Exception:
+        pass
     msgs = []
-    for t in todos:
+    for t in others:
         if t.get("status") == "done" or not t.get("date") or not t.get("time"):
             continue
         if t["date"] != parsed["date"]:
@@ -197,18 +206,35 @@ def build_state(todos: list[dict], now: datetime | None = None) -> dict:
     today = now.date()
     today_iso = today.isoformat()
 
+    try:
+        course_events = course_mod.term_events()
+    except Exception:
+        course_events = []
+    course_by_date = defaultdict(list)
+    for ev in course_events:
+        course_by_date[ev["date"]].append(ev)
+
     enriched = [_enrich(t, today_iso) for t in todos]
-    conflicts = find_conflicts(enriched)
+    conflicts = find_conflicts(enriched + list(course_events))
     conflict_ids = {cid for c in conflicts for cid in c["ids"]}
     for t in enriched:
         t["conflict"] = t["id"] in conflict_ids
+    for ev in course_events:
+        ev["conflict"] = ev["id"] in conflict_ids
 
     schedules = [t for t in enriched if t["is_schedule"]]
     todo_items = [t for t in enriched if t["is_todo"]]
     pending_todos = [t for t in todo_items if not t["done"]]
+    course_today = sum(1 for e in course_events if e["date"] == today_iso)
+    course_week = sum(
+        1 for e in course_events
+        if e["date"] and today_iso <= e["date"] <= (today + timedelta(days=7)).isoformat()
+    )
     stats = {
-        "today_count": sum(1 for t in schedules if t.get("date") == today_iso and not t["done"]),
-        "week_count": sum(
+        "today_count": course_today + sum(
+            1 for t in schedules if t.get("date") == today_iso and not t["done"]
+        ),
+        "week_count": course_week + sum(
             1 for t in schedules
             if t.get("date") and today_iso <= t["date"] <= (today + timedelta(days=7)).isoformat()
             and not t["done"]
@@ -224,6 +250,9 @@ def build_state(todos: list[dict], now: datetime | None = None) -> dict:
     for t in schedules:
         if t.get("date"):
             ds.add(t["date"])
+    for ev in course_events:
+        if ev.get("date"):
+            ds.add(ev["date"])
     start_d = date.fromisoformat(min(ds))
     end_d = date.fromisoformat(max(ds))
     if (end_d - start_d).days > 35:
@@ -239,8 +268,10 @@ def build_state(todos: list[dict], now: datetime | None = None) -> dict:
     timeline = []
     for d in day_iter:
         iso = d.isoformat()
-        items = [t for t in schedules if t.get("date") == iso]
-        items.sort(key=lambda t: (t["done"], t.get("time") or "99:99", t.get("created_at") or ""))
+        items = [t for t in schedules if t.get("date") == iso] + course_by_date.get(iso, [])
+        items.sort(key=lambda t: (
+            bool(t.get("done")), t.get("time") or "99:99", t.get("created_at") or ""
+        ))
         ddl_items = [t for t in todo_items
                      if t.get("deadline") == iso and not t["done"]]
         timeline.append({

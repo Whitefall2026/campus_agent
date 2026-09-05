@@ -613,17 +613,19 @@ function eventHTML(t) {
     t.location ? `📍 ${esc(t.location)}` : "",
     t.done ? "" : deadlineText(t),
   ].filter(Boolean).join(" · ");
+  const ops = t.course ? "" : `
+    <span class="ev-ops">
+      <button class="mini" data-action="edit" title="编辑">✎</button>
+      <button class="mini" data-action="toggle" data-to="${t.done ? "pending" : "done"}" title="${t.done ? "恢复" : "完成"}">${t.done ? "↩" : "✓"}</button>
+      <button class="mini del" data-action="del" title="删除">✕</button>
+    </span>`;
   return `
   <div class="ev ${t.done ? "done" : ""} ${t.time ? "" : "all-day"}" data-id="${esc(t.id)}">
     <span class="ev-title">${esc(t.title)}</span>
     ${meta ? `<span class="ev-meta">${meta}</span>` : ""}
     <span class="badge" style="--c:${c.color}">${c.icon} ${c.label}</span>
     ${t.conflict ? badge("冲突", "#e5484d") : ""}
-    <span class="ev-ops">
-      <button class="mini" data-action="edit" title="编辑">✎</button>
-      <button class="mini" data-action="toggle" data-to="${t.done ? "pending" : "done"}" title="${t.done ? "恢复" : "完成"}">${t.done ? "↩" : "✓"}</button>
-      <button class="mini del" data-action="del" title="删除">✕</button>
-    </span>
+    ${ops}
   </div>`;
 }
 
@@ -936,7 +938,7 @@ async function clearScope(scope, label) {
   }
 }
 
-$("#clearScheduleBtn").addEventListener("click", () => clearScope("schedule", "日程"));
+$("#clearScheduleBtn").addEventListener("click", () => clearScope("schedule", "手动日程（不含课程表）"));
 $("#clearTodoBtn").addEventListener("click", () => clearScope("todo", "待办"));
 
 /* 微信控制 */
@@ -973,6 +975,74 @@ $("#aiTestBtn").addEventListener("click", async () => {
   } catch (err) { alert(err.message); }
 });
 
+/* ================= 课程表导入 ================= */
+function courseResult(text, isErr) {
+  const el = $("#courseResult");
+  el.classList.remove("hidden", "err");
+  if (isErr) el.classList.add("err");
+  el.textContent = text;
+}
+
+async function loadCourseSummary() {
+  try {
+    const s = await api("/api/courses");
+    const meta = s.meta || {};
+    const status = $("#courseStatus");
+    if (s.course_count) {
+      status.textContent =
+        `当前已导入：${meta.term || ""} · ${meta.class_name || ""} · ${s.course_count} 门课` +
+        `（第 1–${s.weeks_total || "?"} 周，学期起始 ${s.term_start || "未设置"}）`;
+      if (s.term_start && !$("#courseTermStart").value) {
+        $("#courseTermStart").value = s.term_start;
+      }
+    } else {
+      status.textContent = "尚未导入课程表";
+    }
+  } catch (_) { /* 静默 */ }
+}
+
+function uploadCourseFile(file) {
+  if (!file) return;
+  if (!/\.xlsx$/i.test(file.name)) {
+    courseResult("请选择 .xlsx 格式的课表文件", true);
+    return;
+  }
+  $("#courseFileName").textContent = file.name;
+  const reader = new FileReader();
+  reader.onerror = () => courseResult("文件读取失败，请重试", true);
+  reader.onload = async () => {
+    try {
+      const data = String(reader.result).split(",")[1] || "";
+      courseResult("正在解析课表…");
+      const res = await api("/api/courses/import", {
+        method: "POST",
+        body: {
+          name: file.name,
+          data,
+          term_start: $("#courseTermStart").value || null,
+        },
+      });
+      courseResult(
+        `导入成功：${res.class_name || ""} · ${res.course_count} 门课，` +
+        `已按 ${res.term_start}（第 1 周）展开进“日程”页。`
+      );
+      $("#courseFileName").textContent = "";
+      $("#courseFile").value = "";
+      await refresh().catch(() => {});
+      await loadCourseSummary();
+    } catch (err) {
+      courseResult("导入失败：" + err.message, true);
+      $("#courseFile").value = "";
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+$("#courseFile").addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) uploadCourseFile(file);
+});
+
 /* 初始化 */
 async function init() {
   if (!location.hash) history.replaceState(null, "", "#/input");
@@ -981,6 +1051,7 @@ async function init() {
   refreshWx();
   await refreshAi();
   await loadChatHistory();
+  await loadCourseSummary();
   setInterval(() => { refreshWx(); refreshAi(); }, 4000);
   setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 8000);
 }

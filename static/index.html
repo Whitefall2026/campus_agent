@@ -126,6 +126,25 @@
       <p class="page-sub">微信自动提取、AI 分析与预筛等设置都集中在这里，识别结果仍统一到“对话”页的“待你采纳”确认</p>
     </div>
 
+    <div class="card import-card">
+      <div class="card-head">
+        <h2>📥 导入课程表</h2>
+        <span class="hint">从教务平台下载“个人课表”Excel（.xlsx）后在这里上传，课程会自动按周出现在日程页</span>
+      </div>
+      <div class="course-upload-row">
+        <label class="file-btn" for="courseFile">选择 Excel 文件</label>
+        <input type="file" id="courseFile" accept=".xlsx" hidden>
+        <span class="course-file-name" id="courseFileName"></span>
+      </div>
+      <div class="course-import-field">
+        <label for="courseTermStart">第 1 周周一</label>
+        <input type="date" id="courseTermStart">
+        <span class="hint">用于把“第 1-16 周”换算成具体日期</span>
+      </div>
+      <div id="courseStatus" class="wx-meta"></div>
+      <div id="courseResult" class="course-result hidden"></div>
+    </div>
+
     <div class="mine-grid">
       <div class="col">
         <!-- 微信自动提取设置 + 运行状态 -->

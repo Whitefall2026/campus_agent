@@ -4,6 +4,7 @@ Handler 由根目录的 server.py 启动；业务逻辑见 app.core / app.ai / a
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -26,7 +27,8 @@ from app.core import kinds
 from app.ai import gateway as ai_gateway
 from app.ai import chat as ai_chat
 from app.wechat.bridge import BRIDGE as WX_BRIDGE
-from app.paths import STATIC_DIR
+from app.paths import DATA_DIR, STATIC_DIR
+from app.core import courses as course_mod
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -137,6 +139,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "pending": pending})
         if path == "/api/chat/history":
             return self._json({"ok": True, "messages": ai_chat.public_history()})
+        if path == "/api/courses":
+            return self._json(course_mod.public_summary())
         self._serve_static(path)
 
     def do_POST(self):
@@ -277,6 +281,43 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(result, 400 if not result.get("ok") else 200)
         if path == "/api/chat/reset":
             return self._json(ai_chat.reset_thread())
+        if path == "/api/courses/import":
+            name = str(body.get("name") or "")
+            payload = str(body.get("data") or "")
+            if not name.lower().endswith(".xlsx") or not payload:
+                return self._json({
+                    "ok": False,
+                    "error": "请选择 .xlsx 格式的课表文件",
+                }, 400)
+            try:
+                raw = base64.b64decode(payload)
+            except Exception:
+                return self._json({"ok": False, "error": "文件内容读取失败"}, 400)
+            if not raw or len(raw) > 20 * 1024 * 1024:
+                return self._json({"ok": False, "error": "文件为空或超过 20MB"}, 400)
+            tmp = os.path.join(DATA_DIR, ".upload_" + uuid.uuid4().hex + ".xlsx")
+            try:
+                with open(tmp, "wb") as f:
+                    f.write(raw)
+                data = course_mod.import_xlsx(
+                    tmp, term_start=str(body.get("term_start") or "") or None
+                )
+            except Exception as exc:
+                return self._json({"ok": False, "error": str(exc) or "课表解析失败"}, 400)
+            finally:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            meta = data.get("meta") or {}
+            return self._json({
+                "ok": True,
+                "course_count": len(data.get("courses") or []),
+                "term": meta.get("term", ""),
+                "class_name": meta.get("class_name", ""),
+                "term_start": meta.get("term_start", ""),
+                "weeks_total": meta.get("weeks_total", 0),
+            })
         m = re.fullmatch(r"/api/ai/pending/([^/]+)/(accept|reject)", urlparse(self.path).path)
         if m:
             item_id = m.group(1)

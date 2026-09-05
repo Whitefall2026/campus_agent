@@ -81,6 +81,32 @@ main { max-width: 1240px; margin: 0 auto; padding: 22px; }
   background: #eef2ff; color: var(--accent); padding: 1px 6px;
   border-radius: 6px; font-size: 12px;
 }
+.import-card { margin-bottom: 18px; }
+.course-upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.file-btn {
+  display: inline-flex; align-items: center; cursor: pointer;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--accent);
+}
+.file-btn:hover { border-color: var(--accent); background: #eef2ff; }
+.course-file-name { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.course-import-field {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px;
+}
+.course-import-field label { font-size: 12.5px; color: var(--ink-2); }
+.course-import-field input[type="date"] {
+  border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px;
+  font: inherit; color: var(--ink); background: #fafbfe; outline: none;
+}
+.course-import-field input[type="date"]:focus { border-color: var(--accent); }
+.course-result {
+  margin-top: 10px; padding: 9px 12px; border-radius: 10px;
+  background: #e9f9ef; border: 1px solid #bfe8cf; color: #0b7a3d; font-size: 13px;
+}
+.course-result.err {
+  background: #fff5f5; border-color: #f5c6c8; color: var(--danger);
+}
 
 /* ---------- 按钮 ---------- */
 button { font: inherit; cursor: pointer; border: none; border-radius: 10px; }
