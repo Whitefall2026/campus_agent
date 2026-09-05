@@ -880,11 +880,20 @@ function findTodo(id) {
   return (state.data && state.data.todos || []).find((t) => t.id === id) || null;
 }
 
+function syncItemKindFields() {
+  const isSchedule = $("#edKind").value === "schedule";
+  document.querySelectorAll("#itemModal .sched-field").forEach((el) => {
+    el.classList.toggle("hidden", !isSchedule);
+  });
+}
+
 function openItemModal({ mode, id, defaults = {} }) {
   const t = id ? findTodo(id) : null;
   state.editMode = mode;
   state.editId = id || null;
-  const kind = (defaults.kind) || (t && (t.kind || (t.is_schedule ? "schedule" : "todo"))) || "schedule";
+  const kind = (defaults.kind)
+    || (mode === "plan" ? "schedule"
+      : (t && (t.kind || (t.is_schedule ? "schedule" : "todo"))) || "schedule");
   const isTodoNew = mode === "new" && kind === "todo";
   $("#modalTitle").textContent = mode === "new"
     ? (isTodoNew ? "＋ 新建待办" : "＋ 新建安排")
@@ -897,6 +906,7 @@ function openItemModal({ mode, id, defaults = {} }) {
         ? "留空字段表示不设置"
       : "可修改类型与时间，日程进时间轴，待办留在待办页";
   $("#edKind").value = kind;
+  syncItemKindFields();
   $("#edTitle").value = (t ? t.title : defaults.title) || "";
   $("#edDate").value = (defaults.date != null ? defaults.date : t && t.date) || "";
   $("#edTime").value = (defaults.time != null ? defaults.time : t && t.time) || "";
@@ -973,6 +983,7 @@ async function saveItemModal() {
 
 $("#edSaveBtn").addEventListener("click", saveItemModal);
 $("#edCancelBtn").addEventListener("click", closeItemModal);
+$("#edKind").addEventListener("change", syncItemKindFields);
 $("#itemModal").addEventListener("click", (e) => {
   if (e.target === $("#itemModal")) closeItemModal();
 });

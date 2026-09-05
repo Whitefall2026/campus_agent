@@ -120,6 +120,11 @@ def _rule_choice(t, busy: dict, start_date: date) -> dict | None:
     if last_day < first_day:
         first_day = last_day
     now_hm = _now().strftime("%H:%M")
+    try:
+        dur = int(t.get("duration_min") or 60)
+        dur = max(15, dur)
+    except (TypeError, ValueError):
+        dur = 60
     span = (last_day - first_day).days
     for i in range(span + 1):
         d = first_day + timedelta(days=i)
@@ -128,7 +133,7 @@ def _rule_choice(t, busy: dict, start_date: date) -> dict | None:
         for slot in SUGGEST_SLOTS:
             if d == today and slot <= now_hm:
                 continue
-            end = end_time_of({"time": slot, "duration_min": 60})
+            end = end_time_of({"time": slot, "duration_min": dur})
             if end and not _clash(slot, end, intervals):
                 if deadline and iso <= deadline:
                     reason = f"截止日当天，安排最早的可用空档" if iso == deadline \
