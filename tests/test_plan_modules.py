@@ -12,7 +12,7 @@ import uuid
 import unittest
 from datetime import date, timedelta
 
-from app.planner import decompose, planner, risk, shield, store
+from app.planner import decompose, llm_copies, planner, risk, shield, store
 from app.paths import DATA_DIR
 
 
@@ -205,6 +205,47 @@ class TestShield(unittest.TestCase):
         self.assertIn("宽松", shield.reply_copy("light", {"undone_todos": 0}))
         self.assertIn("待定", shield.reply_copy("heavy",
                                                 {"undone_todos": 8, "planned_energy": 15.0}))
+
+
+class TestLlmCopies(unittest.TestCase):
+    def test_refusal_copy_not_ready(self):
+        self.assertIsNone(llm_copies.refusal_copy(
+            {"enabled": False}, {"task": "团建"}))
+
+    def test_refusal_copy_with_stub(self):
+        def stub(cfg, messages):
+            return '{"copy": "最近我这边安排有点满，这次先标待定可以吗？"}'
+        copy = llm_copies.refusal_copy(
+            _READY_CFG,
+            {"task": "团建聚餐", "load": "high", "undone": 7,
+             "energy": 15.0, "reasons": ["待办较多"]},
+            completion=stub)
+        self.assertIsNotNone(copy)
+        self.assertIn("待定", copy)
+
+    def test_refusal_copy_bad_json_falls_back(self):
+        def stub(cfg, messages):
+            return "不是 JSON"
+        self.assertIsNone(llm_copies.refusal_copy(
+            _READY_CFG, {"task": "x"}, completion=stub))
+
+    def test_ddl_classify_stub(self):
+        def stub(cfg, messages):
+            return '{"deadline_type": "soft", "float_days": 2}'
+        got = llm_copies.ddl_classify(_READY_CFG, "社团推文初稿", completion=stub)
+        self.assertEqual(got["deadline_type"], "soft")
+        self.assertEqual(got["float_days"], 2)
+        self.assertIsNone(llm_copies.ddl_classify(
+            {"enabled": False}, "随便"))
+
+    def test_risk_advice_stub(self):
+        def stub(cfg, messages):
+            return '{"copy": "建议先只写引言这一步。"}'
+        text = llm_copies.risk_advice(
+            _READY_CFG,
+            {"title": "写论文", "deliverable": "全文", "probability": 0.4},
+            "周四下午", completion=stub)
+        self.assertIn("引言", text)
 
 
 if __name__ == "__main__":

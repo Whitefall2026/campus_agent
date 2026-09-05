@@ -36,6 +36,7 @@ from app.planner import risk as plan_risk
 from app.planner import shield as plan_shield
 from app.planner import decompose as plan_decompose
 from app.planner import store as plan_store
+from app.planner import llm_copies as plan_llm
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -447,13 +448,54 @@ class Handler(BaseHTTPRequestHandler):
             save_todos(todos)
             return self._json({"ok": True, "record": rec, "state": self._state()})
         if path == "/api/shield":
-            # 智能挡箭牌：粘贴外部任务 → 负载评估 + 建议回复
+            # 智能挡箭牌：粘贴外部任务 → 负载评估 + 建议回复（AI 可用时用 LLM 润色）
             text = str(body.get("text") or "").strip()
             if not text:
                 return self._json({"ok": False, "error": "请粘贴要评估的外部任务描述"}, 400)
             day = self._day_from(body.get("date"), date.today())
             res = plan_shield.evaluate_intrusion(load_todos(), text, day=day)
+            if res.get("ok"):
+                cfg = ai_gateway.load_config()
+                if ai_gateway.is_ready(cfg):
+                    try:
+                        enhanced = plan_llm.refusal_copy(cfg, {
+                            "task": res.get("title"),
+                            "load": (res.get("load") or {}).get("level"),
+                            "undone": (res.get("load") or {}).get("undone_todos"),
+                            "energy": (res.get("load") or {}).get("planned_energy"),
+                            "reasons": (res.get("load") or {}).get("reasons"),
+                            "style": str(body.get("style") or "")[:60],
+                        })
+                        if enhanced:
+                            res["copy"] = enhanced
+                            res["copy_method"] = "ai"
+                    except ai_gateway.AiGatewayError:
+                        pass  # 保持规则话术兜底
             return self._json(res, 400 if not res.get("ok") else 200)
+        if path == "/api/plan/classify":
+            # 截止类型分类：LLM 优先，规则兜底（返回与任务库一致的结果）
+            todos = load_todos()
+            item_id = str(body.get("id") or "")
+            todo = next((t for t in todos if t.get("id") == item_id), None)
+            if todo is None:
+                return self._json({"ok": False, "error": "事项不存在"}, 404)
+            cfg = ai_gateway.load_config()
+            out = {"id": item_id}
+            method = "rule"
+            try:
+                got = plan_llm.ddl_classify(
+                    cfg, "{} {}".format(todo.get("title"), todo.get("deliverable") or ""))
+            except ai_gateway.AiGatewayError:
+                got = None
+            if got:
+                out.update(got)
+                method = "ai"
+            else:
+                norm = plan_fields.normalize_task(todo)
+                out["deadline_type"] = norm["deadline_type"]
+                out["ddl_float_days"] = norm["ddl_float_days"]
+            out["method"] = method
+            return self._json({"ok": True, **out})
         if path == "/api/decompose":
             # LLM 任务拆解（预览）：返回候选子任务，不直接入库
             todos = load_todos()

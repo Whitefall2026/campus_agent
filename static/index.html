@@ -331,6 +331,24 @@
           <option value="low">低</option>
         </select>
       </label>
+      <label class="edit-field"><span>截止类型</span>
+        <select id="edDdlType" title="硬线不可延期；软线可自动顺延 1~2 天">
+          <option value="">自动判断</option>
+          <option value="hard">硬线（不可延期）</option>
+          <option value="soft">软线（可顺延）</option>
+        </select>
+      </label>
+      <label class="edit-field"><span>预计耗能</span>
+        <select id="edEnergy" title="1≈半小时轻量 … 5≈2.5 小时高强度">
+          <option value="">自动估算</option>
+          <option value="1">1 · 轻量</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5 · 高强度</option>
+        </select>
+      </label>
+      <label class="edit-field full"><span>交付物（产出结果）</span><input id="edDeliverable" spellcheck="false" placeholder="例如：答辩用 15 页 PPT / 大纲一页"></label>
       <label class="edit-field"><span>日期</span><input type="date" id="edDate"></label>
       <label class="edit-field"><span>开始时间</span><input type="time" id="edTime"></label>
       <label class="edit-field"><span>结束时间</span><input type="time" id="edEndTime"></label>

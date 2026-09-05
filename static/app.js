@@ -867,6 +867,9 @@ function openItemModal({ mode, id, defaults = {} }) {
   $("#edDeadline").value = (t ? t.deadline : defaults.deadline) || "";
   $("#edDeadlineTime").value = (t ? t.deadline_time : defaults.deadline_time) || "";
   $("#edPriority").value = (t ? t.priority : defaults.priority) || "medium";
+  $("#edDdlType").value = (t ? t.deadline_type : defaults.deadline_type) || "";
+  $("#edEnergy").value = t && t.energy_cost != null ? String(t.energy_cost) : (defaults.energy_cost != null ? String(defaults.energy_cost) : "");
+  $("#edDeliverable").value = (t ? t.deliverable : defaults.deliverable) || "";
   const tip = $("#planTip");
   if (mode === "plan") {
     const sug = state.suggestionsById[id];
@@ -910,6 +913,9 @@ async function saveItemModal() {
     deadline: $("#edDeadline").value || null,
     deadline_time: $("#edDeadlineTime").value || null,
     priority: $("#edPriority").value,
+    deadline_type: $("#edDdlType").value || null,
+    energy_cost: $("#edEnergy").value ? parseInt($("#edEnergy").value, 10) : null,
+    deliverable: $("#edDeliverable").value.trim() || null,
   };
   try {
     let res;
