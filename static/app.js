@@ -35,6 +35,7 @@ const state = {
   editId: null,
   editMode: null, // edit | new | plan
   chat: { messages: [], sending: false },
+  aiPlan: [],
 };
 
 /* ---------------- 基础工具 ---------------- */
@@ -597,6 +598,105 @@ $("#aiPendingList").addEventListener("click", (e) => {
     if (!confirm(`确认采纳这条 AI 识别结果到“${label}”？`)) return;
   }
   aiAction(act, item.dataset.id, kind);
+});
+
+/* ================= AI 规划 ================= */
+function planItemHTML(it) {
+  const when = it.date
+    ? `${fmtDay(it.date)}（${fmtWeekday(it.date)}）${it.time}–${it.end_time}`
+    : "暂无可排空档";
+  return `
+    <div class="plan-item" data-id="${esc(it.id)}">
+      <div class="plan-item-main">
+        <div class="plan-title">${esc(it.title || "未命名待办")}</div>
+        <div class="plan-when">🕐 ${esc(when)}</div>
+        ${it.reason ? `<div class="plan-reason">💡 ${esc(it.reason)}</div>` : ""}
+      </div>
+      ${it.date
+        ? `<button class="primary small" data-plan-act="apply" data-plan-id="${esc(it.id)}">采纳</button>`
+        : `<span class="badge">需手动安排</span>`}
+    </div>`;
+}
+
+function renderAiPlan() {
+  const items = state.aiPlan || [];
+  const box = $("#planList");
+  if (!items.length) {
+    box.innerHTML = '<div class="plan-empty">暂无建议，先添加未排期的待办再试试。</div>';
+    $("#planApplyAllBtn").disabled = true;
+    return;
+  }
+  box.innerHTML = items.map(planItemHTML).join("");
+  $("#planApplyAllBtn").disabled = !items.some((x) => x.date);
+}
+
+async function loadAiPlan() {
+  const res = await api("/api/ai/plan", { method: "POST", body: {} });
+  state.aiPlan = res.items || [];
+  const method = res.method === "ai" ? "由 AI 生成" : "规则规划";
+  $("#planHint").textContent = `${res.summary || ""}（${method}，采纳后进入日程）`;
+  if (!state.aiPlan.length) {
+    $("#planCard").classList.add("hidden");
+    return;
+  }
+  $("#planCard").classList.remove("hidden");
+  renderAiPlan();
+}
+
+async function applyPlanItem(id) {
+  const it = (state.aiPlan || []).find((x) => x.id === id);
+  if (!it || !it.date) return;
+  try {
+    await api(`/api/todos/${id}`, {
+      method: "PATCH",
+      body: { kind: "schedule", date: it.date, time: it.time, end_time: it.end_time },
+    });
+    state.aiPlan = state.aiPlan.filter((x) => x.id !== id);
+    renderAiPlan();
+    await refresh().catch(() => {});
+    if (!state.aiPlan.length) $("#planCard").classList.add("hidden");
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+$("#aiPlanBtn").addEventListener("click", async () => {
+  $("#aiPlanBtn").disabled = true;
+  try {
+    await loadAiPlan();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    $("#aiPlanBtn").disabled = false;
+  }
+});
+$("#planList").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-plan-act]");
+  if (!btn || btn.dataset.planAct !== "apply") return;
+  applyPlanItem(btn.dataset.planId);
+});
+$("#planApplyAllBtn").addEventListener("click", async () => {
+  const items = (state.aiPlan || []).filter((x) => x.date);
+  if (!items.length) return;
+  if (!confirm(`确认把 ${items.length} 条建议全部采纳进日程？`)) return;
+  let ok = 0;
+  for (const it of items) {
+    try {
+      await api(`/api/todos/${it.id}`, {
+        method: "PATCH",
+        body: { kind: "schedule", date: it.date, time: it.time, end_time: it.end_time },
+      });
+      ok++;
+    } catch (_) { /* 单条失败不中断 */ }
+  }
+  state.aiPlan = [];
+  $("#planCard").classList.add("hidden");
+  await refresh().catch(() => {});
+  alert(`已采纳 ${ok}/${items.length} 条排期建议`);
+});
+$("#planCloseBtn").addEventListener("click", () => {
+  state.aiPlan = [];
+  $("#planCard").classList.add("hidden");
 });
 
 /* ================= 日程页 ================= */

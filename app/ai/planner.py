@@ -1,0 +1,274 @@
+# -*- coding: utf-8 -*-
+"""AI 规划引擎：把“未排期的待办”放进用户时间轴的空档。
+
+输入：待办（优先级/截止）、近两周已有日程与课程（占位）、用户画像状态。
+输出：结构化排期建议 [{id, date, time, end_time, reason}]，由用户确认后应用。
+
+实现策略：
+- 优先调用当前配置的 AI 服务商做整体规划（理解优先级与情境）；
+- 任何一条建议都会与“已有日程 + 课程表”做冲突校验，不合法即退回规则算法；
+- AI 不可用/超时/输出格式错误时，整份退回规则规划，保证功能始终可用。
+"""
+from __future__ import annotations
+
+import json
+import re
+from datetime import date, datetime, timedelta
+
+from app.ai import gateway as ai_gateway
+from app.ai import profile as user_profile
+from app.core import kinds
+from app.core import courses as course_mod
+from app.core.scheduler import SUGGEST_SLOTS, end_time_of
+from app.core.storage import load_todos
+
+PLAN_DAYS = 14
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TIME_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
+
+PLAN_SYSTEM_PROMPT = """你是「校园管家」的规划助手。用户有一批还没有排期的待办，
+你要把它们安排进未来两周时间轴的空档里，像真人助理一样考虑优先级、截止时间和节奏。
+
+输入包含：
+- 待办列表（id/title/priority/deadline/deadline_time）
+- 未来日期里已经被占用的时段（已有日程 + 课程）
+- 用户当前状态（若有；精力低时不要把一天排太满）
+
+规则：
+1. 每条待办给一个建议日期 date（YYYY-MM-DD）与 time/end_time（HH:MM）；
+2. 只能放在“占用列表”之外的空档；建议时段从 09:00-21:00 之间选择；
+3. 有截止日期的必须安排在截止当天或之前；即将截止的优先安排；
+4. 高优先级提前，低优先级靠后；同一天不要排得太满（精力低时尤其如此）；
+5. 今天是可选日期，但不能安排已经过去的时间；
+6. 不要编造待办 id，也不要漏掉任何一条。
+
+只输出严格 JSON，不要 Markdown：
+{"summary":"给用户的一句话总结","plan":[{"id":"待办id","date":"YYYY-MM-DD","time":"HH:MM","end_time":"HH:MM","reason":"一句话理由"}]}
+"""
+
+
+def _now():
+    return datetime.now()
+
+
+def _unplanned_todos(todos: list) -> list:
+    out = []
+    for t in todos:
+        if t.get("status") == "done":
+            continue
+        if kinds.valid_kind(t.get("kind")) != kinds.KIND_TODO:
+            continue
+        if t.get("date"):
+            continue
+        out.append(t)
+    return out
+
+
+def _busy_map(days: int = PLAN_DAYS) -> dict:
+    """返回 {date_iso: [(start, end), ...]}，含已有日程与课程。"""
+    start = _now().date()
+    busy = {}
+    todos = load_todos()
+    for t in todos:
+        if t.get("status") == "done":
+            continue
+        if kinds.valid_kind(t.get("kind")) != kinds.KIND_SCHEDULE:
+            continue
+        if not t.get("date") or not t.get("time"):
+            continue
+        busy.setdefault(t["date"], []).append((t["time"], end_time_of(t)))
+    try:
+        for ev in course_mod.term_events():
+            if ev.get("date") and ev.get("time"):
+                busy.setdefault(ev["date"], []).append((ev["time"], ev["end_time"]))
+    except Exception:
+        pass
+    out = {}
+    for i in range(days):
+        iso = (start + timedelta(days=i)).isoformat()
+        out[iso] = sorted(busy.get(iso, []))
+    return out
+
+
+def _clash(start: str, end: str, intervals) -> bool:
+    return any(start < e and s < end for s, e in intervals)
+
+
+def _deadline_key(t) -> str:
+    return str(t.get("deadline") or "") or "9999-99-99"
+
+
+def _priority_rank(t) -> int:
+    return {"high": 0, "medium": 1, "low": 2}.get(t.get("priority"), 1)
+
+
+def _rule_choice(t, busy: dict, start_date: date) -> dict | None:
+    """为单条待办找规则空档。返回 {date,time,end_time,reason} 或 None。"""
+    deadline = str(t.get("deadline") or "").strip()
+    today = _now().date()
+    first_day = start_date
+    last_day = today + timedelta(days=PLAN_DAYS - 1)
+    if deadline and DATE_RE.match(deadline):
+        try:
+            dl = date.fromisoformat(deadline)
+            if dl < today:
+                last_day = today
+            elif dl < last_day:
+                last_day = dl
+        except ValueError:
+            pass
+    if last_day < first_day:
+        first_day = last_day
+    now_hm = _now().strftime("%H:%M")
+    span = (last_day - first_day).days
+    for i in range(span + 1):
+        d = first_day + timedelta(days=i)
+        iso = d.isoformat()
+        intervals = busy.get(iso, [])
+        for slot in SUGGEST_SLOTS:
+            if d == today and slot <= now_hm:
+                continue
+            end = end_time_of({"time": slot, "duration_min": 60})
+            if end and not _clash(slot, end, intervals):
+                if deadline and iso <= deadline:
+                    reason = f"截止日当天，安排最早的可用空档" if iso == deadline \
+                        else f"在截止（{deadline}）前安排，当天该时段空闲"
+                else:
+                    reason = "该时段空闲，先安排这条待办"
+                return {"date": iso, "time": slot, "end_time": end, "reason": reason}
+    return None
+
+
+def _context_text(todos: list, busy: dict, state: dict) -> str:
+    today = _now().date()
+    lines = [f"今天：{today.isoformat()}（周{'一二三四五六日'[today.weekday()]}）"]
+    state_lines = []
+    for k, label in (("energy", "精力"), ("task_load", "事务负载"),
+                     ("external_pressure", "外部压力")):
+        v = state.get(k)
+        if v and v != "unknown":
+            state_lines.append(f"{label}={v}")
+    if state_lines:
+        lines.append("用户状态：" + "、".join(state_lines))
+    lines.append("\n待排期待办：")
+    for t in todos:
+        dl = t.get("deadline") or ""
+        dl_t = t.get("deadline_time") or ""
+        lines.append(
+            f"- id={t.get('id')} title={t.get('title')} priority={t.get('priority')}"
+            + (f" deadline={dl} {dl_t}" if dl else "")
+        )
+    lines.append("\n未来占用时段：")
+    for iso in sorted(busy):
+        if busy[iso]:
+            lines.append(f"{iso}: " + ", ".join(f"{s}-{e}" for s, e in busy[iso]))
+    return "\n".join(lines)
+
+
+def _parse_ai_plan(content: str):
+    text = ai_gateway._strip_json_fence(content or "")
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("plan 不是 JSON 对象")
+    plan = data.get("plan") if isinstance(data.get("plan"), list) else []
+    return str(data.get("summary") or "").strip(), plan
+
+
+def _norm_time(v):
+    v = str(v or "").strip()
+    return v if TIME_RE.match(v) else None
+
+
+def _safe_plan_item(raw: dict, t, busy: dict, start_date: date) -> dict | None:
+    """校验 AI 建议；不合法返回 None（调用方退回规则）。"""
+    d = str(raw.get("date") or "").strip()
+    s = _norm_time(raw.get("time"))
+    e = _norm_time(raw.get("end_time"))
+    if not (d and s and e and DATE_RE.match(d)):
+        return None
+    if e <= s:
+        return None
+    try:
+        dd = date.fromisoformat(d)
+    except ValueError:
+        return None
+    if not (start_date <= dd <= start_date + timedelta(days=PLAN_DAYS - 1)):
+        return None
+    if dd == _now().date() and s <= _now().strftime("%H:%M"):
+        return None
+    if _clash(s, e, busy.get(d, [])):
+        return None
+    deadline = str(t.get("deadline") or "")
+    if deadline and DATE_RE.match(deadline) and d > deadline:
+        return None
+    return {
+        "id": t["id"],
+        "date": d,
+        "time": s,
+        "end_time": e,
+        "reason": str(raw.get("reason") or "")[:120],
+    }
+
+
+def plan_open_todos() -> dict:
+    """规划全部未排期待办，返回建议列表（AI 优先 + 规则兜底）。"""
+    todos = _unplanned_todos(load_todos())
+    if not todos:
+        return {"ok": True, "method": "none", "summary": "当前没有需要排期的待办",
+                "items": []}
+    todos.sort(key=lambda t: (_deadline_key(t), _priority_rank(t),
+                              str(t.get("title") or "")))
+    busy = _busy_map()
+    start_date = _now().date()
+    state = user_profile.latest_state() or {}
+    method = "rule"
+    ai_result = None
+    cfg = ai_gateway.load_config()
+    if ai_gateway.is_ready(cfg):
+        try:
+            content = ai_gateway.chat_completion(cfg, [
+                {"role": "system", "content": PLAN_SYSTEM_PROMPT},
+                {"role": "user", "content": _context_text(todos, busy, state)},
+            ])
+            summary, plan = _parse_ai_plan(content)
+            by_id = {str(t.get("id")): t for t in todos}
+            ai_result = []
+            seen = set()
+            for raw in plan:
+                if not isinstance(raw, dict):
+                    continue
+                t = by_id.get(str(raw.get("id") or ""))
+                if t is None or str(t["id"]) in seen:
+                    continue
+                item = _safe_plan_item(raw, t, busy, start_date)
+                if item:
+                    ai_result.append(item)
+                    seen.add(str(t["id"]))
+            if ai_result:
+                method = "ai"
+        except Exception:
+            ai_result = None
+
+    items = []
+    ai_by_id = {str(x["id"]): x for x in ai_result or []}
+    for t in todos:
+        tid = str(t["id"])
+        meta = {"title": t.get("title"), "deadline": t.get("deadline")}
+        if tid in ai_by_id:
+            items.append({**ai_by_id[tid], **meta})
+            continue
+        choice = _rule_choice(t, busy, start_date)
+        if choice:
+            items.append({"id": t["id"], **choice, **meta})
+        else:
+            items.append({
+                "id": t["id"], "date": None, "time": None, "end_time": None,
+                "reason": "未来两周空档不足，建议手动安排或先减负",
+                **meta,
+            })
+    planned = sum(1 for x in items if x.get("date"))
+    if method == "ai":
+        summary = f"我按你的空闲时段和截止时间把待办排好了：{planned} 条可采纳。"
+    else:
+        summary = f"按空闲时段与截止时间自动规划：{planned} 条可采纳。"
+    return {"ok": True, "method": method, "summary": summary, "items": items}

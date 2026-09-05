@@ -30,6 +30,7 @@ from app.ai import context as ai_context
 from app.ai import profile as ai_profile
 from app.ai import memory as ai_memory
 from app.ai import evidence as ai_evidence
+from app.ai import planner as ai_planner
 from app.wechat.bridge import BRIDGE as WX_BRIDGE
 from app.paths import DATA_DIR, STATIC_DIR
 from app.core import courses as course_mod
@@ -296,6 +297,8 @@ class Handler(BaseHTTPRequestHandler):
                 "cleared_evidence": cleared_evidence,
                 "cleared_memories": cleared_memories,
             })
+        if path == "/api/ai/plan":
+            return self._json(ai_planner.plan_open_todos())
         if path == "/api/courses/import":
             name = str(body.get("name") or "")
             payload = str(body.get("data") or "")

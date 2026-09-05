@@ -115,9 +115,23 @@
         <button class="chip" data-todo-filter="overdue">已逾期</button>
         <span class="todo-filter-info" id="todoFilterInfo"></span>
       </div>
+      <button id="aiPlanBtn" class="primary small">✨ AI 规划</button>
       <button id="addTodoBtn" class="primary small">＋ 添加待办</button>
       <button id="clearTodoBtn" class="ghost small danger-text">清空待办</button>
     </div>
+
+    <div class="card plan-card hidden" id="planCard">
+      <div class="card-head">
+        <h2>✨ AI 排期建议</h2>
+        <span class="hint" id="planHint"></span>
+      </div>
+      <div id="planList"></div>
+      <div class="actions">
+        <button id="planApplyAllBtn" class="primary small">全部采纳</button>
+        <button id="planCloseBtn" class="ghost small">关闭</button>
+      </div>
+    </div>
+
     <div id="todoList" class="todo-list"></div>
   </section>
 
