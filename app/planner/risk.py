@@ -225,3 +225,24 @@ def risk_copy(e: dict, weekday: int | None = None,
 def hour_of(e: dict) -> int | None:
     m = fields.hm_to_min(e.get("start"))
     return (m // 60) if m is not None else None
+
+
+def plan_with_risk(plan: dict, stats: dict | None = None,
+                   n: int = DEFAULT_SIMS, seed: int | None = None) -> dict:
+    """把风险评估结果并进 plan 的 entries（不修改入参），返回新 plan。
+
+    每条 entry 增加 probability / risk / risk_copy（risk 时才有文案）。
+    """
+    plan = dict(plan)
+    sims = simulate(plan, stats=stats, n=n, seed=seed)
+    entries = []
+    for s in sims:
+        e = dict(s["entry"])
+        e["probability"] = s["probability"]
+        e["risk"] = bool(s["risk"])
+        merged = {**s, "deliverable": e.get("deliverable")}
+        e["risk_copy"] = risk_copy(merged) if s["risk"] else None
+        entries.append(e)
+    plan["entries"] = entries
+    plan["risk_sim"] = {"n": max(1, int(n)), "seed": seed}
+    return plan

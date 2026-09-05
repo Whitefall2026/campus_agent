@@ -163,3 +163,33 @@ def child_todo(parent: dict, sub: dict) -> dict:
         "created_at": now,
         "plan_defer_to": None,
     }
+
+
+# ---------------------------------------------------------------------------
+# 拆解结果缓存（供“先预览、后采纳”的接口使用，30 分钟内有效）
+# ---------------------------------------------------------------------------
+_CACHE_TTL_MIN = 30
+_last_decomp: dict[str, dict] = {}
+
+
+def cache_subtasks(todo_id: str, subtasks: list[dict]) -> None:
+    if not todo_id:
+        return
+    _last_decomp[str(todo_id)] = {
+        "at": datetime.now().isoformat(timespec="seconds"),
+        "subs": [dict(s) for s in (subtasks or [])],
+    }
+
+
+def cached_subtasks(todo_id: str) -> list[dict] | None:
+    entry = _last_decomp.get(str(todo_id or ""))
+    if not entry:
+        return None
+    try:
+        at = datetime.fromisoformat(str(entry.get("at") or ""))
+        if (datetime.now() - at).total_seconds() > _CACHE_TTL_MIN * 60:
+            _last_decomp.pop(str(todo_id), None)
+            return None
+    except ValueError:
+        return None
+    return [dict(s) for s in (entry.get("subs") or [])]
