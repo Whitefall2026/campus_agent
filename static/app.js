@@ -1131,7 +1131,7 @@ async function loadPlanner(force) {
 
 async function runAiPlan() {
   setPlannerBusy(true);
-  const day = state.planDay || todayISO();
+  const day = todayISO(); // 规划永远针对真实今天，不跟随浏览日期
   try {
     const res = await api("/api/plan/ai", {
       method: "POST",

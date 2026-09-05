@@ -492,7 +492,8 @@ class Handler(BaseHTTPRequestHandler):
                 "weeks_total": meta.get("weeks_total", 0),
             })
         if path == "/api/plan/ai":
-            day = self._day_from(body.get("date"), date.today())
+            # 规划只锚定“真实今天”，与页面浏览到哪一天无关
+            day = date.today()
             todos = load_todos()
             payload = self._plan_payload(todos, day, ai=True)
             entries = (payload.get("plan") or {}).get("entries") or []

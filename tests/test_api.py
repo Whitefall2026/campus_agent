@@ -96,7 +96,15 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(res["todo"]["deadline_type"], "soft")
         self.assertEqual(res["todo"]["ddl_float_days"], 2)
 
-        s, res = self.req("POST", "/api/plan/ai", {"date": tomorrow})
+        # 规划只锚定今天：加一条无截止任务作为今天的候选
+        s, res = self.req("POST", "/api/items", {
+            "title": "整理课程笔记", "kind": "todo", "category": "homework",
+            "priority": "medium", "duration_min": 60,
+        })
+        self.assertEqual(s, 200)
+
+        today = date.today().isoformat()
+        s, res = self.req("POST", "/api/plan/ai", {"date": today})
         self.assertEqual(s, 200)
         plan = res["plan"]
         self.assertGreaterEqual(len(plan["entries"]), 1)
