@@ -141,6 +141,13 @@ class TestEnergy(unittest.TestCase):
     def test_available_total_positive(self):
         self.assertGreater(energy_mod.available_total(), 10)
 
+    def test_current_low_energy_is_a_temporary_budget_adjustment(self):
+        base = energy_mod.default_profile()
+        adjusted = energy_mod.profile_for_current_state(base, {"energy": "low"})
+        self.assertLess(adjusted["hours"][9], base["hours"][9])
+        self.assertEqual(base["hours"][9], 1.2)  # 长期曲线不可被一次自评改写
+        self.assertEqual(adjusted["state_multiplier"], 0.65)
+
 
 class TestStore(unittest.TestCase):
     def test_event_roundtrip(self):
@@ -194,6 +201,18 @@ class TestPlanner(unittest.TestCase):
         entry = plan["entries"][0]
         self.assertEqual(entry["start"], "10:00")
         self.assertEqual(entry["end"], "11:00")
+
+    def test_focus_cap_preserves_uncommitted_time_for_non_urgent_tasks(self):
+        todos = [
+            mk_todo("t1", "整理笔记", duration_min=60, energy_cost=1),
+            mk_todo("t2", "读一章书", duration_min=60, energy_cost=1),
+            mk_todo("t3", "复盘课程", duration_min=60, energy_cost=1),
+        ]
+        plan = planner.plan_day(
+            todos, day=self.day, include_courses=False, focus_cap_min=120)
+        self.assertEqual(plan["budget"]["focus_minutes"], 120)
+        self.assertEqual(plan["meta"]["planned"], 2)
+        self.assertGreater(plan["budget"]["protected_free_minutes"], 0)
 
     def test_deadline_limit_respected(self):
         # 截止 15:00，时长 90 分钟 → 必须 13:30 前开始；白天只有 13:00 后空闲

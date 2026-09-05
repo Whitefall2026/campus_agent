@@ -194,13 +194,20 @@ class Handler(BaseHTTPRequestHandler):
         # 只给「主动推进」留有限额；硬截止任务不受此限，避免系统替用户漏事。
         cap_by_energy = {"low": 120, "medium": 180, "high": 240}
         cap = cap_by_energy.get(str(state.get("energy") or "").lower(), 180) if current_day else None
-        plan0 = plan_engine.plan_day(todos, day=day, profile=profile,
-                                    focus_cap_min=cap)
+        guide = ai_planner.guide_day_order(todos, day.isoformat())
+        plan0 = plan_engine.plan_day(
+            todos, day=day, profile=profile, focus_cap_min=cap,
+            candidate_order=guide.get("order") or None,
+        )
         plan0.setdefault("meta", {}).update({
             "state_energy": state.get("energy") or "unknown",
             "state_multiplier": profile.get("state_multiplier", 1.0),
             "focus_cap_min": cap,
         })
+        if guide.get("order"):
+            plan0["meta"]["ai_guided"] = True
+        if guide.get("note"):
+            plan0["meta"]["ai_note"] = guide["note"]
         seed = day.year * 10000 + day.month * 100 + day.day
         plan = plan_risk.plan_with_risk(plan0, seed=seed)
         load = plan_shield.load_metrics(todos, day=day, plan=plan0)

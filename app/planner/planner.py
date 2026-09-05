@@ -173,6 +173,7 @@ def plan_day(
     include_courses: bool = True,
     seed: int | None = None,
     focus_cap_min: int | None = None,
+    candidate_order: list | None = None,
 ) -> dict:
     """为某天生成完整规划方案（纯函数，不落库）。
 
@@ -186,6 +187,16 @@ def plan_day(
     runs = free_runs(todos, day, include_courses=include_courses)
     cands = [fields.normalize_task(t) for t in candidate_tasks(todos, day)]
     cands.sort(key=_task_key)
+    if candidate_order:
+        by_id = {str(c.get("id")): c for c in cands}
+        seen = set()
+        ordered = []
+        for cid in candidate_order:
+            c = by_id.get(str(cid))
+            if c is not None and str(c["id"]) not in seen:
+                ordered.append(c)
+                seen.add(str(c["id"]))
+        cands = ordered + [c for c in cands if str(c["id"]) not in seen]
 
     entries, warnings = [], []
     rest_marks = []

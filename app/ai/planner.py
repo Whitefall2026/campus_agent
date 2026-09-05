@@ -328,6 +328,111 @@ def plan_open_todos() -> dict:
     return {"ok": True, "method": method, "summary": summary, "items": items}
 
 
+GUIDE_DAY_SYSTEM = """你是「校园管家」的智能调度决策者。
+
+能量引擎会严格按你返回的任务顺序，把任务放进当天的空闲时段；
+你的职责是根据用户的画像（精力/负载/压力）、精力曲线、长期记忆和处境，
+决定今天值得推进哪些任务、先后顺序如何——负载高时主动留白，
+把低价值软线任务往后放，而不是把日程塞满。
+
+输入包含候选任务与用户背景。只输出严格 JSON：
+{"order":["任务id", ...], "note":"一句话给用户看的说明"}
+
+规则：
+1. 今天截止、已逾期、硬线任务必须排在前面且不得省略；
+2. 软线/无截止/低优先级任务可以排在后面或省略（引擎会自然放到明天优先）；
+3. 高优先级且需要大块精力的任务，优先放到上午等精力高峰时段靠前的位置；
+4. 用户精力低或负载高时，控制“今天推进”的数量，宁可少排也别硬塞；
+5. 只能使用输入里出现的任务 id，不要编造。
+"""
+
+
+def guide_day_order(todos: list, day_iso: str) -> dict:
+    """让 AI 决定某天的任务推进顺序；AI 不可用时返回空引导。"""
+    from app.planner import planner as engine_mod
+
+    try:
+        day = date.fromisoformat(str(day_iso or "")[:10])
+    except ValueError:
+        return {"order": [], "note": ""}
+    cands = engine_mod.candidate_tasks(todos, day)
+    if not cands:
+        return {"order": [], "note": ""}
+    cands.sort(key=engine_mod._task_key)
+    iso = day.isoformat()
+    cfg = ai_gateway.load_config()
+    if not ai_gateway.is_ready(cfg):
+        return {"order": None, "note": ""}
+
+    forced = [
+        c for c in cands
+        if str(c.get("deadline") or "") == iso
+        or (str(c.get("deadline") or "") and str(c["deadline"]) < iso)
+    ]
+    forced_ids = [str(c["id"]) for c in forced]
+    cand_ids = {str(c["id"]) for c in cands}
+
+    lines = []
+    for c in cands:
+        lines.append(
+            "- id={id} title={title} priority={prio} deadline={dl} "
+            "deadline_type={dt} energy_cost={ec} duration={dur}{ov}".format(
+                id=c.get("id"),
+                title=c.get("title"),
+                prio=c.get("priority"),
+                dl=c.get("deadline") or "",
+                dt=c.get("deadline_type") or "",
+                ec=c.get("energy_cost") or 1,
+                dur=c.get("duration_min") or 60,
+                ov="（已逾期）" if str(c.get("deadline") or "") and str(c["deadline"]) < iso else "",
+            )
+        )
+
+    state = user_profile.latest_state() or {}
+    state_lines = []
+    for k, label in (("energy", "精力"), ("task_load", "事务负载"),
+                     ("external_pressure", "外部压力")):
+        v = state.get(k)
+        if v and v != "unknown":
+            state_lines.append(f"{label}={v}")
+    mem_lines = [m.get("content") for m in user_memory.list_memories()[:8]]
+    context = ["日期：" + iso]
+    if state_lines:
+        context.append("用户状态：" + "、".join(state_lines))
+    context.extend(_energy_context_lines())
+    if mem_lines:
+        context.append("长期记忆：" + "；".join(str(x) for x in mem_lines))
+    user = (
+        "候选任务：\n{lines}\n\n{ctx}\n\n"
+        "请按系统规则输出 order 与 note。"
+    ).format(lines="\n".join(lines), ctx="\n".join(context))
+    try:
+        content = ai_gateway.chat_completion(cfg, [
+            {"role": "system", "content": GUIDE_DAY_SYSTEM},
+            {"role": "user", "content": user},
+        ])
+        text = ai_gateway._strip_json_fence(content or "")
+        data = json.loads(text)
+        ai_order = [str(x) for x in (data.get("order") or [])]
+        note = str(data.get("note") or "").strip()[:120]
+    except Exception:
+        return {"order": None, "note": ""}
+
+    rest = [x for x in ai_order if x in cand_ids and x not in forced_ids]
+    seen = set(forced_ids)
+    final = list(forced_ids)
+    for x in rest:
+        if x not in seen:
+            final.append(x)
+            seen.add(x)
+    for c in cands:
+        cid = str(c["id"])
+        if cid not in seen:
+            final.append(cid)
+            seen.add(cid)
+    return {"order": final, "note": note}
+
+
 def _hour_bucket(time_s: str) -> str:
     try:
         h = int(str(time_s or "")[:2])
