@@ -274,3 +274,56 @@ def derive_from_planner() -> dict | None:
         "situation": situation,
         "summary": summary,
     }
+
+
+def maybe_refresh_state(minutes: float = 15.0, use_ai: bool = True) -> dict | None:
+    """事件驱动的画像刷新（带最小间隔，避免频繁重算/烧 token）。
+
+    - 超过 minutes 分钟没有刷新才执行；
+    - AI 可用且证据足够时，先用证据做 AI 状态评估（estimator）；
+    - 否则退回 derive_from_planner 的规则推导；
+    - 顺带对近期证据做一次长期记忆沉淀（AI 或规则兜底）。
+    """
+    state = latest_state()
+    last = None
+    try:
+        last_s = str(state.get("updated_at") or "")
+        if last_s:
+            last = datetime.fromisoformat(last_s)
+    except ValueError:
+        last = None
+    if last is not None and (datetime.now() - last).total_seconds() < minutes * 60:
+        return None
+
+    try:
+        from app.ai import evidence as _evidence_mod
+        from app.ai import gateway as _gateway_mod
+        from app.ai import estimator as _estimator_mod
+    except Exception:
+        _evidence_mod = _gateway_mod = _estimator_mod = None
+
+    evidences = _evidence_mod.recent_evidence(limit=100) if _evidence_mod else []
+    updated = False
+    if use_ai and _gateway_mod is not None and len(evidences) >= 3:
+        try:
+            cfg = _gateway_mod.load_config()
+            if _gateway_mod.is_ready(cfg):
+                st = _estimator_mod.estimate_state(
+                    evidences,
+                    lambda prompt: _gateway_mod.chat_completion(
+                        cfg, [{"role": "user", "content": prompt}]),
+                )
+                update_state(st)
+                updated = True
+        except Exception:
+            updated = False
+    if not updated:
+        derive_from_planner()
+
+    try:
+        from app.ai import memory as _memory_mod
+        cfg = _gateway_mod.load_config() if _gateway_mod is not None else None
+        _memory_mod.consolidate_memories(evidences, cfg)
+    except Exception:
+        pass
+    return {"refreshed": True, "state": latest_state()}

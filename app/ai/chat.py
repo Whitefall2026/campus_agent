@@ -19,6 +19,8 @@ from datetime import datetime, timedelta
 
 from app.ai import gateway as ai_gateway
 from app.ai import evidence as ai_evidence
+from app.ai import context as ai_context
+from app.ai import profile as user_profile
 from app.core import kinds
 from app.core.extractor import parse_text
 from app.core.scheduler import slot_conflicts
@@ -67,7 +69,8 @@ def public_history() -> list:
 
 
 def reset_thread() -> dict:
-    """清空会话（不清待采纳队列）。"""
+    """清空会话（不清待采纳队列；user_evidence 里的对话证据保留，
+    供画像与记忆持续分析使用）。"""
     with _LOCK:
         _save_messages([])
     return {"ok": True, "messages": []}
@@ -114,6 +117,11 @@ def _agenda_lines() -> str:
     return "\n".join(lines) if lines else "（暂无近期安排）"
 
 
+def _user_context_section() -> str:
+    """把画像状态/处境/长期记忆整理成系统提示里的“用户背景”。"""
+    return ai_context.user_background_text()
+
+
 def _system_prompt() -> str:
     now = datetime.now()
     week = "周" + "日一二三四五六"[now.weekday()]
@@ -122,6 +130,7 @@ def _system_prompt() -> str:
         "你要一边像助手一样回应，一边把里面的日程/待办结构化提取出来。\n"
         "当前日期：{today}（{week}）\n\n"
         "近期已有安排（用来判断冲突，不要整段复述）：\n{agenda}\n\n"
+        "{user_context}\n\n"
         "硬性规则：\n"
         "1. 用户说出需要执行/到场/准备/截止的安排（会议、上课、作业、活动、"
         "体检、交材料、报名等）时提取为 items；纯闲聊、提问、确认语没有安排"
@@ -145,7 +154,8 @@ def _system_prompt() -> str:
         "\"deadline_time\":\"HH:MM 或 null\",\"confidence\":0到1,"
         "\"reason\":\"一句话依据\"}}]}}\n"
         "没有任何安排时返回 {{\"reply\":\"...\",\"items\":[]}}。"
-    ).format(today=now.strftime("%Y-%m-%d"), week=week, agenda=_agenda_lines())
+    ).format(today=now.strftime("%Y-%m-%d"), week=week,
+             agenda=_agenda_lines(), user_context=_user_context_section())
 
 
 def _openai_messages(thread: list) -> list:
@@ -324,6 +334,10 @@ def chat_turn(text: str) -> dict:
         thread.append({"role": "user", "content": text, "ts": _now_iso()})
         _save_messages(thread)
     ai_evidence.add_evidence("chat", text, {"kind": "user_message"})
+    try:
+        user_profile.maybe_refresh_state()
+    except Exception:
+        pass
 
     reply = ""
     items = []

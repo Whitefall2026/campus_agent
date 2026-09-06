@@ -12,6 +12,8 @@ import uuid
 import unittest
 from datetime import date, timedelta
 
+from app.ai import chat as ai_chat
+from app.ai import memory as ai_memory
 from app.ai import planner as ai_planner
 from app.planner import decompose, llm_copies, planner, risk, shield, store
 from app.paths import DATA_DIR
@@ -192,6 +194,36 @@ class TestSelectiveRiskParse(unittest.TestCase):
         summary, items = ai_planner._parse_selective_plan(content)
         self.assertEqual(items[0]["probability"], 1.0)
         self.assertFalse(items[0]["risk"])
+
+
+class TestUserInsights(unittest.TestCase):
+    def test_chat_prompt_contains_user_background(self):
+        prompt = ai_chat._system_prompt()
+        self.assertIn("用户背景", prompt)
+
+    def test_extract_memory_candidates_rules(self):
+        evs = [
+            {"source": "chat",
+             "content": "我习惯把作业安排在下午做，另外我这个人比较直接、不喜欢客套。"},
+            {"source": "chat", "content": "今天真的好累。"},
+        ]
+        cands = ai_memory.extract_memory_candidates(evs)
+        kinds = {c["kind"] for c in cands}
+        self.assertIn("preference", kinds)
+        self.assertIn("personality", kinds)
+        self.assertTrue(all(0.0 <= c["importance"] <= 1.0 for c in cands))
+
+    def test_parse_ai_memories(self):
+        content = (
+            '{"memories":[{"content":"喜欢简短直接的回答","kind":"personality",'
+            '"importance":0.8},{"content":"习惯下午做深度工作",'
+            '"kind":"preference","importance":0.7}]}'
+        )
+        cands = ai_memory.parse_ai_memories(content)
+        self.assertEqual(len(cands), 2)
+        self.assertEqual(cands[0]["kind"], "personality")
+        self.assertAlmostEqual(cands[0]["importance"], 0.8)
+        self.assertEqual(cands[1]["kind"], "preference")
 
 
 class TestShield(unittest.TestCase):

@@ -26,3 +26,10 @@ def save_todos(todos: list[dict]) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(todos, f, ensure_ascii=False, indent=2)
     os.replace(tmp, DATA_FILE)
+    # 待办是动态画像的重要输入：保存后事件驱动刷新画像（带最小间隔，
+    # 不会每次保存都重算；失败静默，不影响主流程）。
+    try:
+        from app.ai import profile as ai_profile
+        ai_profile.maybe_refresh_state()
+    except Exception:
+        pass

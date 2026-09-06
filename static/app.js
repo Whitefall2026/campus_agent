@@ -9,20 +9,20 @@ const SAMPLES = [
 ];
 
 const CAT = {
-  exam: { label: "考试", color: "#e5484d", icon: "📝" },
-  homework: { label: "作业", color: "#8e4ec6", icon: "📚" },
-  class: { label: "上课", color: "#3b82f6", icon: "🎒" },
+  exam: { label: "考试", color: "#e5484d", icon: "" },
+  homework: { label: "作业", color: "#8e4ec6", icon: "" },
+  class: { label: "上课", color: "#3b82f6", icon: "" },
   deadline: { label: "截止", color: "#f76808", icon: "⏰" },
-  meeting: { label: "会议", color: "#12a150", icon: "🤝" },
-  activity: { label: "活动", color: "#f59e0b", icon: "🎯" },
-  social: { label: "社交", color: "#ec4899", icon: "🍻" },
-  health: { label: "健康", color: "#14b8a6", icon: "💪" },
-  other: { label: "其他", color: "#64748b", icon: "📌" },
+  meeting: { label: "会议", color: "#12a150", icon: "" },
+  activity: { label: "活动", color: "#f59e0b", icon: "" },
+  social: { label: "社交", color: "#ec4899", icon: "" },
+  health: { label: "健康", color: "#14b8a6", icon: "" },
+  other: { label: "其他", color: "#64748b", icon: "" },
 };
 
 const KIND = {
-  schedule: { label: "日程", color: "#4f6ef7", icon: "🗓️", cls: "kind-schedule" },
-  todo: { label: "待办", color: "#b45309", icon: "✅", cls: "kind-todo" },
+  schedule: { label: "日程", color: "#0e7490", icon: "", cls: "kind-schedule" },
+  todo: { label: "待办", color: "#d97706", icon: "", cls: "kind-todo" },
 };
 
 const PAGES = ["input", "schedule", "todos", "planner", "mine"];
@@ -95,10 +95,10 @@ function timeRange(t) {
 }
 
 function sourceBadge(t) {
-  if (t.source === "wechat_ai") return badge("🤖 微信AI", "#7c3aed");
-  if (t.source === "wechat") return badge("📲 微信", "#0ea5e9");
-  if (t.source === "chat_ai") return badge("💬 AI 对话", "#6366f1");
-  if (t.source === "chat_rule") return badge("🧭 对话识别", "#0891b2");
+  if (t.source === "wechat_ai") return badge("微信AI", "#0e7490");
+  if (t.source === "wechat") return badge("微信", "#0e7490");
+  if (t.source === "chat_ai") return badge("AI 对话", "#0e7490");
+  if (t.source === "chat_rule") return badge("对话识别", "#0e7490");
   return "";
 }
 
@@ -109,7 +109,7 @@ function kindBadge(t) {
 
 function deadlineText(t) {
   if (!t.deadline) return "";
-  return `⏰ 截止 ${fmtDay(t.deadline)}${t.deadline_time ? " " + t.deadline_time : ""}`;
+  return `截止 ${fmtDay(t.deadline)}${t.deadline_time ? " " + t.deadline_time : ""}`;
 }
 
 /* ---------------- 顶栏统计 ---------------- */
@@ -143,7 +143,7 @@ function showPage() {
   if (state.page === "todos") renderTodosPage();
   // 计划页只在当天首次进入时自动规划；切走再切回沿用已生成的结果，
   // 需要重排时由用户点「重新规划」。
-  if (state.page === "planner") loadPlanner();
+  if (state.page === "planner") { loadPlanner(); loadAiYou(); }
   if (state.page === "mine") { refreshWx(); refreshAi(); }
 }
 
@@ -178,8 +178,8 @@ function chatPendingIds() {
 function chatItemStatus(it) {
   const done = (label) => ({ done: true, label });
   if (it.outcome === "rejected") return done("已忽略");
-  if (it.outcome === "accepted:schedule") return done("✅ 已采纳到日程");
-  if (it.outcome === "accepted:todo") return done("✅ 已采纳到待办");
+  if (it.outcome === "accepted:schedule") return done("已采纳到日程");
+  if (it.outcome === "accepted:todo") return done("已采纳到待办");
   if (!chatPendingIds().has(it.id)) return done("已处理");
   return null;
 }
@@ -190,16 +190,16 @@ function chatItemHTML(it) {
     : (f.deadline || f.deadline_time) && f.kind !== "schedule" ? "todo"
       : "schedule";
   const k = KIND[kind];
-  const method = it.method === "rule-fallback" ? "🧭 规则识别" : "🤖 AI 识别";
+  const method = it.method === "rule-fallback" ? "规则识别" : "AI 识别";
   const when = fmtAiWhen(f) || "未识别到明确时间";
   const status = chatItemStatus(it);
   const conflicts = (it.conflicts || []).map((c) =>
-    `<div class="chat-conflict"><span class="dot conflict"></span><span>${esc(c)}</span></div>`).join("");
+    `<div class="chat-conflict">${esc(c)}</div>`).join("");
   const actions = status
     ? `<div class="chat-item-done">${esc(status.label)}</div>`
     : `<div class="ai-actions">
-        <button class="small ok-schedule" data-chat-id="${esc(it.id)}" data-chat-act="accept" data-chat-kind="schedule">🗓️ 采纳到日程</button>
-        <button class="small ok-todo" data-chat-id="${esc(it.id)}" data-chat-act="accept" data-chat-kind="todo">✅ 采纳到待办</button>
+        <button class="small ok-schedule" data-chat-id="${esc(it.id)}" data-chat-act="accept" data-chat-kind="schedule">采纳到日程</button>
+        <button class="small ok-todo" data-chat-id="${esc(it.id)}" data-chat-act="accept" data-chat-kind="todo">采纳到待办</button>
         <button class="ghost small" data-chat-id="${esc(it.id)}" data-chat-act="reject">忽略</button>
       </div>`;
   return `
@@ -210,7 +210,7 @@ function chatItemHTML(it) {
         <span class="badge" style="--c:#7c3aed">${method}</span>
       </div>
       <div class="ai-when">${esc(when)}</div>
-      ${f.location ? `<div class="ai-when">📍 ${esc(f.location)}</div>` : ""}
+      ${f.location ? `<div class="ai-when">${esc(f.location)}</div>` : ""}
       ${it.reason ? `<div class="ai-reason">${esc(it.reason)}</div>` : ""}
       ${conflicts}
       ${actions}
@@ -234,15 +234,69 @@ function chatMsgHTML(m) {
     </div>`;
 }
 
+function threadItemIds() {
+  const ids = new Set();
+  (state.chat.messages || []).forEach((m) => {
+    (m.items || []).forEach((it) => {
+      if (it.id) ids.add(String(it.id));
+    });
+  });
+  return ids;
+}
+
+function incomingItemHTML(p) {
+  const f = p.fields || {};
+  const kind = f.kind === "todo" ? "todo"
+    : (f.deadline || f.deadline_time) && f.kind !== "schedule" ? "todo"
+      : "schedule";
+  const k = KIND[kind];
+  const method = p.method === "ai"
+    ? "AI 识别"
+    : p.method === "rule-fallback" ? "规则识别" : "规则识别";
+  const conf = p.confidence != null
+    ? `置信度 ${Math.round(p.confidence * 100)}%`
+    : "";
+  const src = p.raw ? "原文：" + esc(String(p.raw).slice(0, 120)) : "";
+  const sourceLine = p.chat_display && p.chat_display !== "chat"
+    ? `来源：${esc(p.chat_display)}${p.sender && p.sender !== "我" ? " · " + esc(p.sender) : ""}`
+    : "来源：微信消息";
+  return `
+    <div class="chat-item" data-id="${esc(p.id)}">
+      <div class="ai-item-head">
+        <span class="ai-title">${esc(f.title || "未命名事项")}</span>
+        <span class="badge ${k.cls}">${k.icon} 建议${k.label}</span>
+        <span class="badge" style="--c:#0e7490">${method}${conf ? " · " + conf : ""}</span>
+      </div>
+      <div class="ai-when">${fmtAiWhen(f) || "未识别到明确时间"}</div>
+      ${f.location ? `<div class="ai-when">${esc(f.location)}</div>` : ""}
+      ${src ? `<div class="ai-raw">${src}</div>` : ""}
+      <div class="ai-reason">${sourceLine}</div>
+      ${p.error ? `<div class="ai-err">AI 调用失败：${esc(p.error)}（本次为临时规则识别）</div>` : ""}
+      <div class="ai-actions">
+        <button class="small ok-schedule" data-chat-id="${esc(p.id)}" data-chat-act="accept" data-chat-kind="schedule">采纳到日程</button>
+        <button class="small ok-todo" data-chat-id="${esc(p.id)}" data-chat-act="accept" data-chat-kind="todo">采纳到待办</button>
+        <button class="ghost small" data-chat-id="${esc(p.id)}" data-chat-act="reject">忽略</button>
+      </div>
+    </div>`;
+}
+
 function renderChatLog() {
   const log = $("#chatLog");
   const stickToBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
   const msgs = state.chat.messages || [];
-  if (!msgs.length) {
-    log.innerHTML = '<div class="chat-empty">把安排直接说给我，我会一边回应一边记下来，放进“待你采纳”等你确认。</div>';
-    return;
+  const embedded = threadItemIds();
+  const incoming = (state.pending || []).filter((p) => !embedded.has(String(p.id)));
+  let html = msgs.map(chatMsgHTML).join("");
+  if (incoming.length) {
+    html += `<div class="chat-incoming">
+      <div class="chat-incoming-title">待采纳 · <b>${incoming.length}</b></div>
+      ${incoming.map(incomingItemHTML).join("")}
+    </div>`;
   }
-  log.innerHTML = msgs.map(chatMsgHTML).join("");
+  if (!html) {
+    html = '<div class="chat-empty">把安排直接说给我，我会一边回应一边记下来，确认后入库。</div>';
+  }
+  log.innerHTML = html;
   if (stickToBottom) chatScrollBottom();
 }
 
@@ -313,7 +367,7 @@ $("#chatInput").addEventListener("keydown", (e) => {
 });
 $("#chatInput").addEventListener("input", autosizeChatInput);
 $("#chatResetBtn").addEventListener("click", async () => {
-  if (!confirm("清空当前对话记录？不会影响待采纳与已保存的事项。")) return;
+  if (!confirm("清空当前对话记录？对话证据会继续保留（用于画像与记忆分析），不会清空。")) return;
   try {
     await api("/api/chat/reset", { method: "POST", body: {} });
     state.chat.messages = [];
@@ -540,43 +594,7 @@ function renderAiPending(list) {
   if (state.aiPendingSig === sig) return;
   state.aiPendingSig = sig;
   state.pending = items;
-  $("#aiPendingHint").textContent = items.length
-    ? `${items.length} 条待你确认`
-    : "暂无待采纳";
-  const box = $("#aiPendingList");
-  if (!items.length) {
-    box.innerHTML = '<div class="wx-empty">暂无待采纳事项。启用 AI 后，微信消息通过预筛会出现在这里，你可选择“采纳到日程”或“采纳到待办”。</div>';
-    if ((state.chat.messages || []).length) renderChatLog();
-    return;
-  }
-  box.innerHTML = items.map((p) => {
-    const f = p.fields || {};
-    const kind = f.kind === "todo" ? "todo" : "schedule";
-    const k = KIND[kind];
-    const method = p.method === "ai" ? "🤖 AI" : "🧭 规则兜底";
-    const conf = p.confidence != null ? ` · 置信度 ${Math.round(p.confidence * 100)}%` : "";
-    const src = p.raw ? "原文：" + esc(String(p.raw).slice(0, 120)) : "";
-    return `
-    <div class="ai-item" data-id="${esc(p.id)}">
-      <div class="ai-item-head">
-        <span class="ai-title">${esc(f.title || "未命名事项")}</span>
-        <span class="badge ${k.cls}">${k.icon} 建议${k.label}</span>
-        <span class="badge" style="--c:#7c3aed">${method}${conf}</span>
-      </div>
-      <div class="ai-when">${fmtAiWhen(f) || "未识别到明确时间"}</div>
-      ${f.location ? `<div class="ai-when">📍 ${esc(f.location)}</div>` : ""}
-      ${src ? `<div class="ai-raw">${src}</div>` : ""}
-      ${p.chat_display ? `<div class="ai-reason">来源：${esc(p.chat_display)}${p.sender && p.sender !== "我" ? " · " + esc(p.sender) : ""}</div>` : ""}
-      ${p.reason ? `<div class="ai-reason">${esc(p.reason)}</div>` : ""}
-      ${p.error ? `<div class="ai-err">AI 调用失败：${esc(p.error)}（本次是临时规则兜底）</div>` : ""}
-      <div class="ai-actions">
-        <button class="small ok-schedule" data-ai-action="accept" data-kind="schedule">🗓️ 采纳到日程</button>
-        <button class="small ok-todo" data-ai-action="accept" data-kind="todo">✅ 采纳到待办</button>
-        <button class="ghost small" data-ai-action="reject">忽略</button>
-      </div>
-    </div>`;
-  }).join("");
-  if ((state.chat.messages || []).length) renderChatLog();
+  renderChatLog();
 }
 
 async function aiAction(act, id, kind) {
@@ -592,20 +610,6 @@ async function aiAction(act, id, kind) {
   } catch (err) { alert(err.message); }
 }
 
-$("#aiPendingList").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-ai-action]");
-  if (!btn) return;
-  const item = btn.closest("[data-id]");
-  if (!item) return;
-  const act = btn.dataset.aiAction;
-  const kind = btn.dataset.kind;
-  if (act === "accept") {
-    const label = kind === "todo" ? "待办" : "日程";
-    if (!confirm(`确认采纳这条 AI 识别结果到“${label}”？`)) return;
-  }
-  aiAction(act, item.dataset.id, kind);
-});
-
 /* ================= 日程页 ================= */
 function dayInfo(iso) {
   const d = new Date(iso + "T00:00:00");
@@ -617,8 +621,8 @@ function dayInfo(iso) {
 function eventHTML(t) {
   const c = catOf(t);
   const meta = [
-    t.time ? `🕐 ${timeRange(t)}` : "",
-    t.location ? `📍 ${esc(t.location)}` : "",
+    t.time ? timeRange(t) : "",
+    t.location ? esc(t.location) : "",
     t.done ? "" : deadlineText(t),
   ].filter(Boolean).join(" · ");
   const ops = t.course ? "" : `
@@ -651,21 +655,20 @@ function renderSchedulePage() {
   if (due.length) {
     $("#dueCard").classList.remove("hidden");
     $("#dueList").innerHTML = due.map((t) =>
-      `<div class="due-list-item">⏰ <b>${esc(t.title)}</b> 今天截止${t.deadline_time ? " " + esc(t.deadline_time) : ""}</div>`).join("");
+      `<div class="due-list-item"><b>${esc(t.title)}</b> 今天截止${t.deadline_time ? " " + esc(t.deadline_time) : ""}</div>`).join("");
   } else {
     $("#dueCard").classList.add("hidden");
   }
 
   const allDay = items.filter((t) => !t.time);
   const periodDef = [
-    { key: "am", label: "☀️ 上午", min: "00:00", max: "12:00", def: "09:00" },
-    { key: "pm", label: "🌤️ 下午", min: "12:00", max: "18:00", def: "14:00" },
-    { key: "ev", label: "🌙 晚上", min: "18:00", max: "24:00", def: "19:30" },
+    { key: "am", label: "上午", min: "00:00", max: "12:00", def: "09:00" },
+    { key: "pm", label: "下午", min: "12:00", max: "18:00", def: "14:00" },
+    { key: "ev", label: "晚上", min: "18:00", max: "24:00", def: "19:30" },
   ];
   const inPeriod = (t, p) => t.time && t.time >= p.min && t.time < p.max;
   const emptyDayMsg = !items.length
     ? `<div class="empty-day">
-         <div class="empty-icon">🗓️</div>
          <p>${info.label} 还没有安排 — 把待办卡片拖进下面的时段，即可排进这天</p>
          <button class="primary" data-action="add-day">＋ 添加安排</button>
        </div>`
@@ -690,7 +693,7 @@ function renderSchedulePage() {
   const allDayBlock = allDay.length
     ? `
       <div class="period-block">
-        <div class="period-head"><span>📌 全天</span><span class="period-count">${allDay.length} 项</span></div>
+        <div class="period-head"><span>全天</span><span class="period-count">${allDay.length} 项</span></div>
         <div class="period-list" data-def="09:00">${allDay.map(eventHTML).join("")}</div>
       </div>`
     : "";
@@ -792,12 +795,12 @@ function todoItemHTML(t) {
     <div class="td-main">
       <div class="td-title">${esc(t.title)} <span class="tl-badges">${badges}</span></div>
       ${meta ? `<div class="td-meta">${meta}</div>` : ""}
-      ${t.location ? `<div class="td-meta">📍 ${esc(t.location)}</div>` : ""}
+      ${t.location ? `<div class="td-meta">${esc(t.location)}</div>` : ""}
       ${t.done ? rateRowHTML(t.id) : ""}
     </div>
     <div class="td-ops">
       ${!t.done && (t.energy_cost || 0) >= 3
-        ? `<button class="mini" data-action="decompose" title="AI 拆解为里程碑子任务">✂️ 拆解</button>` : ""}
+        ? `<button class="mini" data-action="decompose" title="AI 拆解为里程碑子任务">拆解</button>` : ""}
       ${!t.done ? `<button class="mini plan" data-action="plan" title="规划到日程">规划到日程</button>` : ""}
       <button class="mini" data-action="edit" title="编辑">✎</button>
       <button class="mini" data-action="toggle" data-to="${t.done ? "pending" : "done"}" title="${t.done ? "恢复待办" : "标记完成"}">${t.done ? "↩" : "✓"}</button>
@@ -861,7 +864,7 @@ function openItemModal({ mode, id, defaults = {} }) {
   const isTodoNew = mode === "new" && kind === "todo";
   $("#modalTitle").textContent = mode === "new"
     ? (isTodoNew ? "＋ 新建待办" : "＋ 新建安排")
-    : mode === "plan" ? "📅 规划到日程" : "✏️ 编辑事项";
+    : mode === "plan" ? "规划到日程" : "编辑事项";
   $("#modalHint").textContent = mode === "plan"
     ? "为这条待办选择日期和时间，保存后进入日程时间轴"
     : isTodoNew
@@ -888,7 +891,7 @@ function openItemModal({ mode, id, defaults = {} }) {
     const sug = state.suggestionsById[id];
     tip.classList.remove("hidden");
     tip.innerHTML = sug
-      ? `💡 建议空档：${fmtDay(sug.date)}（${fmtWeekday(sug.date)}）${sug.time}–${sug.end_time}（已帮你预填，可修改）`
+      ? `建议空档：${fmtDay(sug.date)}（${fmtWeekday(sug.date)}）${sug.time}–${sug.end_time}（已帮你预填，可修改）`
       : "暂时没有自动建议，你可以手动选择任意日期和时段。";
     if (sug && !defaults.override) {
       $("#edDate").value = sug.date;
@@ -1092,7 +1095,7 @@ function setPlannerBusy(busy) {
     const el = document.getElementById(id);
     if (el) el.disabled = busy;
   });
-  if (busy) $("#planHint").textContent = "🤖 AI 正在结合你的画像、处境与精力排期，稍等…";
+  if (busy) $("#planHint").textContent = "正在结合你的画像、处境与精力排期，稍等…";
 }
 
 async function loadPlanner(force, includeSkipped) {
@@ -1284,8 +1287,8 @@ function entryHTML(e, day, warns) {
 
 /* ---- 今日排程建议渲染（AI 跨日建议，采纳后才写入日程） ---- */
 const SUGGEST_DDL = {
-  hard: { text: "硬线", icon: "🔴" },
-  soft: { text: "软线", icon: "🟡" },
+  hard: { text: "硬线", icon: "" },
+  soft: { text: "软线", icon: "" },
 };
 
 function suggestionHTML(it) {
@@ -1303,7 +1306,7 @@ function suggestionHTML(it) {
     ? `<span class="badge" style="--c:${it.deadline_type === "hard" ? "#e5484d" : "#f59e0b"}">${dd.icon} ${dd.text}</span>`
     : "";
   const energyBadge = it.energy_cost != null
-    ? `<span class="badge" style="--c:#8e4ec6">⚡${it.energy_cost}点</span>`
+    ? `<span class="badge" style="--c:#8e4ec6">耗能 ${it.energy_cost}</span>`
     : "";
   const prob = it.probability != null ? Math.round(it.probability * 100) : null;
   const pcls = prob == null ? "" : prob >= 75 ? "p-hi" : prob >= 60 ? "p-mid" : "p-low";
@@ -1322,16 +1325,16 @@ function suggestionHTML(it) {
   <div class="plan-entry ${entryCls}">
     <div class="entry-time">${esc(whenDate)}${timeLine ? " " + timeLine : ""}</div>
     <div class="entry-body">
-      <div class="entry-title">${esc(it.title || "未命名任务")}${ddlBadge}${energyBadge}${adapt ? `<span class="tag-adapt">⚡适配</span>` : ""}</div>
-      <div class="entry-meta">${esc(deadlineLine || "无截止")}${it.deliverable ? ` 📦 ${esc(it.deliverable)}` : ""}</div>
-      ${it.reason ? `<div class="entry-meta" style="margin-top:4px">💡 ${esc(it.reason)}</div>` : ""}
+      <div class="entry-title">${esc(it.title || "未命名任务")}${ddlBadge}${energyBadge}${adapt ? `<span class="tag-adapt">适配</span>` : ""}</div>
+      <div class="entry-meta">${esc(deadlineLine || "无截止")}${it.deliverable ? ` · ${esc(it.deliverable)}` : ""}</div>
+      ${it.reason ? `<div class="entry-meta" style="margin-top:4px">${esc(it.reason)}</div>` : ""}
       ${adapt ? `<div class="entry-meta" style="margin-top:4px">所需精力略高于该时段标准，但在可承受范围（≤15% 容差）内。</div>` : ""}
       ${prob != null ? `
       <div class="prob-bar"><i class="fill ${pcls}" style="width:${prob}%"></i></div>
       <div class="prob-note ${risk ? "risk" : ""}">
-        ${risk ? `⚠️ 完成概率 ${prob}%，系统不太放心` : `完成概率约 ${prob}%`}
+        ${risk ? `完成概率 ${prob}%，风险较高` : `完成概率约 ${prob}%`}
       </div>
-      ${risk && it.risk_copy ? `<div class="entry-meta" style="margin-top:4px">💡 ${esc(it.risk_copy)}</div>` : ""}` : ""}
+      ${risk && it.risk_copy ? `<div class="entry-meta" style="margin-top:4px">${esc(it.risk_copy)}</div>` : ""}` : ""}
     </div>
     ${ops}
   </div>`;
@@ -1385,7 +1388,7 @@ function renderSuggestionsPage() {
   const empty = $("#planEmpty");
   if (!items.length) {
     box.innerHTML = "";
-    empty.innerHTML = `<div class="plan-empty">当前没有适合安排的待办 🎉
+    empty.innerHTML = `<div class="plan-empty">当前没有适合安排的待办
       <br><span style="font-size:12px">这里只展示 AI 判断“目前值得规划”的任务；
       截止还远或不紧急的待办会留在「待办」页，临近时再给出建议。</span></div>`;
   } else {
@@ -1394,7 +1397,7 @@ function renderSuggestionsPage() {
   }
 
   const method = sug.method === "ai"
-    ? "🤖 AI 排期"
+    ? "AI 排期"
     : sug.method === "none" ? "" : "规则排期";
   $("#planHint").innerHTML =
     (items.length ? `${items.length} 项待采纳` : "暂无排程建议") +
@@ -1490,7 +1493,7 @@ $("#planEntries").addEventListener("click", async (e) => {
 /* ---- 完成反馈：待办标记完成后给出精力反馈（校准曲线） ---- */
 function rateRowHTML(id) {
   if (state.ratedIds.has(id)) {
-    return `<div class="rate-row"><span>✅ 反馈已记录，感谢校准精力曲线</span></div>`;
+    return `<div class="rate-row"><span>反馈已记录，感谢校准精力曲线</span></div>`;
   }
   return `<div class="rate-row">
     <span>这项做完的感觉？</span>
@@ -1519,13 +1522,13 @@ async function runDecompose(id, item) {
       return;
     }
     panel.innerHTML = `
-      <div class="sub-title">🧩 建议拆成 ${res.subtasks.length} 个里程碑</div>
+      <div class="sub-title">建议拆成 ${res.subtasks.length} 个里程碑</div>
       ${res.subtasks.map((s, i) => `
         <div class="sub-row">
           <span class="sub-idx">${i + 1}</span>
           <b>${esc(s.name)}</b>
-          ${s.deliverable ? `<span class="sub-deliverable">📦 ${esc(s.deliverable)}</span>` : ""}
-          <span class="badge" style="--c:#7c3aed">⚡${s.energy_cost}</span>
+          ${s.deliverable ? `<span class="sub-deliverable">${esc(s.deliverable)}</span>` : ""}
+          <span class="badge" style="--c:#7c3aed">耗能 ${s.energy_cost}</span>
           ${s.deadline ? `<span class="sub-when">→ ${esc(s.deadline)}</span>` : ""}
         </div>`).join("")}
       <div class="sub-actions">
@@ -1632,17 +1635,6 @@ function aiYouDimText(state) {
 
 function renderAiYou(s) {
   const state = s.state || {};
-  const bar = $("#aiYouBar");
-  const hasProfile = s.updated_at || s.evidence_count || s.memory_count;
-  if (hasProfile) {
-    bar.classList.remove("hidden");
-    bar.innerHTML =
-      `🤖 当前画像：${esc(aiYouDimText(state))}` +
-      ` ｜ 对话证据 ${s.evidence_count || 0} 条 · 长期记忆 ${s.memory_count || 0} 条`;
-  } else {
-    bar.classList.add("hidden");
-  }
-
   const card = $("#aiYouCard");
   card.classList.remove("hidden");
   const body = $("#aiYouBody");
@@ -1655,7 +1647,7 @@ function renderAiYou(s) {
     </div>
     <div class="ai-you-note">${
       known.length
-        ? `AI 对你的当前状态有初步理解（最近更新 ${s.updated_at ? esc(s.updated_at.slice(0, 16).replace("T", " ")) : "—"}）；画像将随对话与反馈持续演化。`
+        ? `当前画像：${esc(aiYouDimText(state))}（最近更新 ${s.updated_at ? esc(s.updated_at.slice(0, 16).replace("T", " ")) : "—"}）；将随对话与反馈持续演化。`
         : `AI 还在通过对话慢慢了解你：已收集 ${s.evidence_count || 0} 条观察、${s.memory_count || 0} 条长期记忆。所有数据只保存在本机，可随时重置。`
     }</div>`;
 }

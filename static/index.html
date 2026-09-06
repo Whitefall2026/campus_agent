@@ -3,24 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>校园管家 · Campus Agent</title>
+<title>RUC Agent</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header class="topbar">
   <div class="brand">
-    <span class="logo">🎓</span>
-    <div class="brand-text">
-      <span class="name">校园管家</span>
-      <span class="tagline">不让任何一件重要的事被吞没</span>
-    </div>
+    <span class="name">RUC Agent</span>
   </div>
   <nav class="nav">
-    <a href="#/input" data-page="input" class="nav-item active">💬 对话</a>
-    <a href="#/schedule" data-page="schedule" class="nav-item">🗓️ 日程</a>
-    <a href="#/todos" data-page="todos" class="nav-item">✅ 待办</a>
-    <a href="#/planner" data-page="planner" class="nav-item">🧭 计划</a>
-    <a href="#/mine" data-page="mine" class="nav-item">👤 我的</a>
+    <a href="#/input" data-page="input" class="nav-item active">对话</a>
+    <a href="#/planner" data-page="planner" class="nav-item">计划</a>
+    <a href="#/schedule" data-page="schedule" class="nav-item">日程</a>
+    <a href="#/todos" data-page="todos" class="nav-item">待办</a>
+    <a href="#/mine" data-page="mine" class="nav-item">我的</a>
   </nav>
   <div class="stats" id="stats"></div>
   <div class="toolbar">
@@ -29,52 +25,77 @@
 </header>
 
 <main>
-  <!-- ===================== 页面一：AI 对话 ===================== -->
-  <section class="page page-input" data-page="input">
+  <!-- ===================== 页面一：对话 ===================== -->
+  <section class="page page-chat" data-page="input">
+    <div class="chat-view">
+      <div id="chatLog" class="chat-scroll">
+        <div class="chat-empty">把安排直接说给我，我会一边回应一边记下来，确认后入库。</div>
+      </div>
+      <div class="chat-composer">
+        <textarea id="chatInput" rows="1" placeholder="输入消息或安排…"></textarea>
+        <button id="chatSendBtn" class="primary">发送</button>
+      </div>
+      <div class="chat-foot">
+        <span class="sample-note">示例</span>
+        <div class="samples" id="samples"></div>
+        <button id="chatResetBtn" class="ghost small chat-clear">清空会话</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 页面二：计划 ===================== -->
+  <section class="page page-planner hidden" data-page="planner">
     <div class="page-head">
-      <h1>AI 助理</h1>
-      <p class="page-sub">把安排直接说给 AI：对话中自动提取日程 / 待办，结果先进“待你采纳”，确认后入库</p>
+      <h1>今日能量计划</h1>
+      <p class="page-sub">AI 结合你的画像、处境与精力曲线，只挑目前值得规划的待办给出排期建议；采纳后才写入日程</p>
     </div>
 
-    <div id="aiYouBar" class="ai-you-bar hidden"></div>
+    <div class="card ai-you-card hidden" id="aiYouCard">
+      <div class="card-head">
+        <h2>AI 与你</h2>
+        <span class="hint">画像与记忆仅保存在本机，将帮助 AI 提出更贴合你的建议</span>
+        <button id="profileResetBtn" class="ghost small danger-text">重置画像</button>
+      </div>
+      <div id="aiYouBody" class="ai-you-body"></div>
+    </div>
 
-    <div class="input-grid">
-      <div class="col">
-        <!-- AI 对话 -->
-        <div class="card chat-card">
+    <div class="planner-grid">
+      <div class="col rail">
+        <div class="card energy-card">
           <div class="card-head">
-            <h2>💬 和 AI 说安排</h2>
-            <span class="hint">会话保存在本机 · 识别结果进右侧待采纳</span>
-            <button id="chatResetBtn" class="ghost small">清空会话</button>
+            <h2>今日能量</h2>
+            <span class="hint" id="energyHint"></span>
           </div>
-          <div id="chatLog" class="chat-log">
-            <div class="chat-empty">把安排直接说给我，我会一边回应一边记下来，放进“待你采纳”等你确认。</div>
+          <div class="ring-row">
+            <svg class="energy-ring" viewBox="0 0 120 120" width="132" height="132">
+              <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+              <circle class="ring-fg" id="ringFg" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <div class="ring-meta" id="energyMeta"></div>
           </div>
-          <div class="chat-box">
-            <textarea id="chatInput" rows="1" placeholder="例如：周四晚上7点社团例会在二教401，帮我记一下"></textarea>
-            <button id="chatSendBtn" class="primary">发送</button>
-          </div>
-          <div class="chat-samples">
-            <div class="sample-note">试试这样说：</div>
-            <div class="samples" id="samples"></div>
-          </div>
+          <div class="curve-title">今日精力曲线（07–23 点）</div>
+          <div class="curve-strip" id="curveStrip"></div>
         </div>
       </div>
 
-      <div class="col">
-        <!-- 待你采纳（微信 / AI 提取结果分流） -->
-        <div class="card pipeline-card" id="aiPendingCard">
+      <div class="col main">
+        <div class="card plan-card">
           <div class="card-head">
-            <h2>📥 待你采纳</h2>
-            <span class="hint" id="aiPendingHint">等待分析</span>
+            <h2>排程建议</h2>
+            <span class="hint" id="planHint"></span>
+            <button id="planRecomputeBtn" class="ghost small" title="重新规划（会把今天跳过的任务重新纳入考虑）">重新规划</button>
+            <button id="planApplyAllBtn" class="primary small">一键采纳排程</button>
           </div>
-          <div id="aiPendingList"></div>
+          <div id="planWarnings" class="plan-warnings"></div>
+          <div id="planDeferrals" class="plan-deferrals"></div>
+          <div id="planEntries"></div>
+          <div id="planEmpty"></div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ===================== 页面二：日程 ===================== -->
+  <!-- ===================== 页面三：日程 ===================== -->
   <section class="page page-schedule hidden" data-page="schedule">
     <div class="page-head">
       <h1>日程</h1>
@@ -93,7 +114,7 @@
     </div>
 
     <div class="card due-card hidden" id="dueCard">
-      <div class="card-head"><h2>⏰ 当日截止的待办</h2></div>
+      <div class="card-head"><h2>当日截止的待办</h2></div>
       <div id="dueList"></div>
     </div>
 
@@ -102,7 +123,7 @@
     </div>
   </section>
 
-  <!-- ===================== 页面三：待办 ===================== -->
+  <!-- ===================== 页面四：待办 ===================== -->
   <section class="page page-todos hidden" data-page="todos">
     <div class="page-head">
       <h1>待办</h1>
@@ -123,69 +144,16 @@
     <div id="todoList" class="todo-list"></div>
   </section>
 
-  <!-- ===================== 页面四：计划（能量看板） ===================== -->
-  <section class="page page-planner hidden" data-page="planner">
-    <div class="page-head">
-      <h1>今日能量计划</h1>
-      <p class="page-sub">AI 结合你的画像、处境与精力曲线，只挑目前值得规划的待办给出排期建议；采纳后才写入日程</p>
-    </div>
-
-    <div class="planner-grid">
-      <div class="col rail">
-        <!-- 能量环 -->
-        <div class="card energy-card">
-          <div class="card-head">
-            <h2>⚡ 今日能量</h2>
-            <span class="hint" id="energyHint"></span>
-          </div>
-          <div class="ring-row">
-            <svg class="energy-ring" viewBox="0 0 120 120" width="132" height="132">
-              <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
-              <circle class="ring-fg" id="ringFg" cx="60" cy="60" r="52"></circle>
-            </svg>
-            <div class="ring-meta" id="energyMeta"></div>
-          </div>
-          <div class="curve-title">今日精力曲线（07–23 点）</div>
-          <div class="curve-strip" id="curveStrip"></div>
-        </div>
-      </div>
-
-      <div class="col main">
-        <div class="card plan-card">
-          <div class="card-head">
-            <h2>📋 排程建议</h2>
-            <span class="hint" id="planHint"></span>
-            <button id="planRecomputeBtn" class="ghost small" title="重新规划（会把今天跳过的任务重新纳入考虑）">↻ 重新规划</button>
-            <button id="planApplyAllBtn" class="primary small">一键采纳排程</button>
-          </div>
-          <div id="planWarnings" class="plan-warnings"></div>
-          <div id="planDeferrals" class="plan-deferrals"></div>
-          <div id="planEntries"></div>
-          <div id="planEmpty"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- ===================== 页面五：我的 ===================== -->
   <section class="page page-mine hidden" data-page="mine">
     <div class="page-head">
       <h1>我的</h1>
-      <p class="page-sub">微信自动提取、AI 分析与预筛等设置都集中在这里，识别结果仍统一到“对话”页的“待你采纳”确认</p>
-    </div>
-
-    <div class="card ai-you-card hidden" id="aiYouCard">
-      <div class="card-head">
-        <h2>🤖 AI 与你</h2>
-        <span class="hint">画像与记忆仅保存在本机，将帮助 AI 提出更贴合你的建议</span>
-        <button id="profileResetBtn" class="ghost small danger-text">重置画像</button>
-      </div>
-      <div id="aiYouBody" class="ai-you-body"></div>
+      <p class="page-sub">微信自动提取、AI 分析与预筛等设置都集中在这里</p>
     </div>
 
     <div class="card import-card">
       <div class="card-head">
-        <h2>📥 导入课程表</h2>
+        <h2>导入课程表</h2>
         <span class="hint">从教务平台下载“个人课表”Excel（.xlsx）后在这里上传，课程会自动按周出现在日程页</span>
       </div>
       <div class="course-upload-row">
@@ -207,7 +175,7 @@
         <!-- 微信自动提取设置 + 运行状态 -->
         <div class="card" id="wechatCard">
           <div class="card-head">
-            <h2>📲 微信自动提取</h2>
+            <h2>微信自动提取</h2>
             <span class="hint">读取 + 监听微信消息，自动提取日程 / 待办</span>
           </div>
           <div id="wxStatus" class="wx-status wx-off">● 未运行</div>
@@ -230,8 +198,8 @@
         <!-- AI 分析设置 -->
         <div class="card pipeline-card" id="aiCard">
           <div class="card-head">
-            <h2>🤖 AI 日程 / 待办分析</h2>
-            <span class="hint">微信消息 → 预筛 → AI 提取 → 待你采纳（对话页）</span>
+            <h2>AI 日程 / 待办分析</h2>
+            <span class="hint">微信消息 → 预筛 → AI 提取 → 对话页待采纳</span>
           </div>
           <div id="aiStatus" class="ai-status ai-off">○ 未启用</div>
           <div class="ai-row">
@@ -283,26 +251,26 @@
 
     <div class="card about-card">
       <div class="card-head">
-        <h2>🗂️ 数据与隐私</h2>
+        <h2>数据与隐私</h2>
         <span class="hint">本地存储</span>
       </div>
       <p class="about-text">
         日程与待办保存在 <code>data/todos.json</code>；AI 配置、待采纳队列与监听会话同样只存在本机。
-        API Key 不会上传到校园管家服务，仅在启用后发送给你选择的 AI 服务商用于调用。
+        API Key 不会上传到 RUC Agent 服务，仅在启用后发送给你选择的 AI 服务商用于调用。
       </p>
     </div>
   </section>
 </main>
 
 <footer>
-  校园管家 demo · 数据保存在本地 data/todos.json · 日程进入时间轴，待办等待规划
+  RUC Agent demo · 数据保存在本地 data/todos.json · 日程进入时间轴，待办等待规划
 </footer>
 
 <!-- 事项编辑 / 新建 / 规划共用弹窗 -->
 <div class="modal-mask hidden" id="itemModal">
   <div class="modal">
     <div class="card-head">
-      <h2 id="modalTitle">✏️ 事项</h2>
+      <h2 id="modalTitle">事项</h2>
       <span class="hint" id="modalHint"></span>
     </div>
     <div class="edit-grid">

@@ -23,7 +23,8 @@ from app.paths import DATA_DIR
 from app.web.handlers import Handler
 
 TOUCHED = ["todos.json", "planner_profile.json", "planner_events.json",
-           "ai_config.json"]
+           "ai_config.json", "user_profile.json", "user_evidence.json",
+           "user_memory.json", "user_state_history.json", "chat_thread.json"]
 
 
 class TestApiIntegration(unittest.TestCase):
@@ -327,6 +328,26 @@ class TestApiIntegration(unittest.TestCase):
         s, sug3 = self.req("POST", "/api/plan/suggest",
                            {"include_skipped": True})
         self.assertIn(tid, [x.get("id") for x in sug3["items"]])
+
+    def test_chat_reset_keeps_evidence(self):
+        # 清空会话只清对话消息；对话证据必须保留，供画像分析
+        self._reset_plan()
+        s, res = self.req("POST", "/api/chat", {
+            "text": "你好，我习惯把作业安排在下午做。",
+        })
+        self.assertEqual(s, 200)
+        s, prof = self.req("GET", "/api/ai/profile")
+        self.assertEqual(s, 200)
+        before = int(prof.get("evidence_count") or 0)
+        self.assertGreater(before, 0)
+
+        s, reset = self.req("POST", "/api/chat/reset", {})
+        self.assertEqual(s, 200)
+        self.assertEqual(reset.get("messages"), [])
+
+        s, prof2 = self.req("GET", "/api/ai/profile")
+        self.assertEqual(s, 200)
+        self.assertEqual(int(prof2.get("evidence_count") or 0), before)
 
     def test_adopt_uses_displayed_future_deadline_slot(self):
         # 未来截止的任务也会被提前安排；采纳时应写入页面展示的那个时段，

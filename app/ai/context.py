@@ -11,6 +11,32 @@ from app.ai import profile as user_profile
 from app.ai import evidence as user_evidence
 
 
+def user_background_text(memory_limit: int = 8) -> str:
+    """统一生成“用户背景”文本：状态/处境/长期记忆（供对话与规划注入）。"""
+    profile = user_profile.load_profile()
+    state = profile.get("state") or {}
+    parts = []
+    for key, label in (("energy", "精力"), ("task_load", "事务负载"),
+                       ("external_pressure", "外部压力")):
+        v = state.get(key)
+        if v and v != "unknown":
+            parts.append(f"{label}={v}")
+    lines = []
+    if parts:
+        lines.append("状态：" + "、".join(parts))
+    situation = str(profile.get("situation") or "").strip()
+    if situation:
+        lines.append("处境：" + situation)
+    mems = user_memory.list_memories()[:max(0, int(memory_limit))]
+    if mems:
+        lines.append("长期记忆：" + "；".join(
+            ("性格：" if m.get("kind") == "personality" else "偏好：")
+            + str(m.get("content") or "") for m in mems))
+    if not lines:
+        return "用户背景：（画像尚在积累，暂无可用信息）"
+    return "用户背景（用来让回应更贴合用户，不要复述数据来源）：\n" + "\n".join(lines)
+
+
 def build_planning_context(state) -> dict:
     """根据用户状态选择规划模式（收编自 user_state/context.py）。"""
     s = state.to_dict() if hasattr(state, "to_dict") else (state or {})
@@ -33,6 +59,10 @@ def build_planning_context(state) -> dict:
 
 def profile_summary() -> dict:
     """给前端展示的画像摘要（Phase 1：只展示，不注入推理）。"""
+    try:
+        user_profile.maybe_refresh_state()
+    except Exception:
+        pass
     profile = user_profile.load_profile()
     state = profile.get("state") or {}
     if not profile.get("updated_at") or not state.get("updated_at") \

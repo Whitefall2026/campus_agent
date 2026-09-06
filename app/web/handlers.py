@@ -799,6 +799,7 @@ class Handler(BaseHTTPRequestHandler):
                             "energy": (res.get("load") or {}).get("planned_energy"),
                             "reasons": (res.get("load") or {}).get("reasons"),
                             "style": str(body.get("style") or "")[:60],
+                            "background": ai_context.user_background_text(),
                         })
                         if enhanced:
                             res["copy"] = enhanced
@@ -915,6 +916,10 @@ class Handler(BaseHTTPRequestHandler):
                 "bucket": plan_risk.bucket_of(hour),
                 "rating": rating,
             })
+            try:
+                ai_profile.maybe_refresh_state(minutes=1)
+            except Exception:
+                pass
             return self._json({
                 "ok": True,
                 "rating": rating,

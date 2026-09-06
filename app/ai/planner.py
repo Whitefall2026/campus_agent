@@ -895,4 +895,8 @@ def record_plan_feedback(action: str, items: list) -> dict:
                 importance=min(0.9, 0.45 + 0.08 * int(buckets[top])),
                 category="planning_preference",
             )
+    try:
+        user_profile.maybe_refresh_state(minutes=1)
+    except Exception:
+        pass
     return {"ok": True, "recorded": len(lines), "action": action}

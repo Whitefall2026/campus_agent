@@ -76,9 +76,12 @@ def refusal_copy(cfg: dict, ctx: dict, completion=None) -> str | None:
     undone = int(ctx.get("undone") or 0)
     energy = float(ctx.get("energy") or 0.0)
     reasons = "、".join(str(x) for x in (ctx.get("reasons") or [])) or "安排较满"
+    background = str(ctx.get("background") or "").strip()
+    background_lines = ("\n用户背景：\n" + background) if background else ""
     user = (
         "插入任务：{task}\n当前负载：{load}\n待办 {undone} 项，"
-        "已排约 {energy} 点能量；理由：{reasons}\n风格偏好：{style}\n\n请按系统规则输出 JSON。"
+        "已排约 {energy} 点能量；理由：{reasons}\n风格偏好：{style}"
+        "{background}\n\n请按系统规则输出 JSON。"
     ).format(
         task=str(ctx.get("task") or "未命名活动"),
         load=load,
@@ -86,6 +89,7 @@ def refusal_copy(cfg: dict, ctx: dict, completion=None) -> str | None:
         energy=energy,
         reasons=reasons,
         style=str(ctx.get("style") or "简洁、像本人说话"),
+        background=background_lines,
     )
     try:
         return _parse_copy(_chat(cfg, REFUSAL_SYSTEM, user, completion))
