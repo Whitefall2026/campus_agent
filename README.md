@@ -170,3 +170,8 @@ wechatauto-replica-main/  第三方库 wechatauto-replica（微信能力，Apach
    改过前端后再跑 `node --check static/app.js`；也可单独看某天的能量排程
    演示：`python -m app.planner.demo`。
 5. 分支、提交信息与本地验证的约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## License
+
+本项目以 Apache License 2.0 开源（见根目录 `LICENSE`）。
+`wechatauto-replica-main/` 为 Apache-2.0 的第三方库，保留其自带 LICENSE。
