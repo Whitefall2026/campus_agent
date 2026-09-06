@@ -35,12 +35,9 @@ const state = {
   editId: null,
   editMode: null, // edit | new | plan
   chat: { messages: [], sending: false },
-  plan: null,       // /api/plan 载荷 {plan, load}
-  planDay: null,
-  planSig: "",
+  suggest: null,    // /api/plan/suggest 载荷 {items, energy, summary}
   energy: null,     // /api/energy {hours, available_points}
   ratedIds: new Set(),
-  aiPlanTried: {},
 };
 
 /* ---------------- 基础工具 ---------------- */
@@ -144,6 +141,8 @@ function showPage() {
   });
   if (state.page === "schedule") renderSchedulePage();
   if (state.page === "todos") renderTodosPage();
+  // 计划页只在当天首次进入时自动规划；切走再切回沿用已生成的结果，
+  // 需要重排时由用户点「重新规划」。
   if (state.page === "planner") loadPlanner();
   if (state.page === "mine") { refreshWx(); refreshAi(); }
 }
@@ -1089,61 +1088,37 @@ const DDL_LABEL = {
 };
 
 function setPlannerBusy(busy) {
-  ["planPrev", "planNext", "planToday", "planPick",
-   "planRecomputeBtn", "planApplyAllBtn"].forEach((id) => {
+  ["planRecomputeBtn", "planApplyAllBtn"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.disabled = busy;
   });
-  if (busy) $("#planHint").textContent = "🤖 AI 正在结合你的画像与精力排期，稍等…";
+  if (busy) $("#planHint").textContent = "🤖 AI 正在结合你的画像、处境与精力排期，稍等…";
 }
 
-async function loadPlanner(force) {
-  const day = state.planDay || todayISO();
-  state.planDay = day;
-  const sig = day;
-  if (!force && state.planSig === sig && state.plan) {
+async function loadPlanner(force, includeSkipped) {
+  // 计划页固定展示“今日”：加载 AI 排程建议 + 今日能量/精力曲线。
+  // 轮询刷新时不重复请求，避免每 8 秒重复调 AI。
+  const today = todayISO();
+  if (!force && state.suggest && state.suggest.date === today
+      && Array.isArray(state.suggest.items)) {
     renderPlannerPage();
     return;
   }
   setPlannerBusy(true);
   try {
-    const [planRes, energyRes] = await Promise.all([
-      api(`/api/plan?date=${day}`),
+    const [sug, energyRes] = await Promise.all([
+      api("/api/plan/suggest", {
+        method: "POST",
+        body: { include_skipped: !!includeSkipped },
+      }),
       api("/api/energy"),
     ]);
-    state.plan = planRes;
+    state.suggest = sug;
     state.energy = energyRes.energy || null;
-    state.planSig = sig;
     renderPlannerPage();
-    if (day === todayISO() && !state.aiPlanTried[day]
-        && (planRes.plan.meta.candidates || 0) > 0
-        && !planRes.plan.meta.ai_guided) {
-      state.aiPlanTried[day] = true;
-      await runAiPlan();
-    }
   } catch (err) {
     console.error("loadPlanner failed", err);
     $("#planHint").textContent = "加载失败：" + err.message;
-  } finally {
-    setPlannerBusy(false);
-  }
-}
-
-async function runAiPlan() {
-  setPlannerBusy(true);
-  const day = todayISO(); // 规划永远针对真实今天，不跟随浏览日期
-  try {
-    const res = await api("/api/plan/ai", {
-      method: "POST",
-      body: { date: day },
-    });
-    state.plan = res;
-    state.planDay = day;
-    state.planSig = day;
-    renderPlannerPage();
-  } catch (err) {
-    console.error("AI plan failed", err);
-    $("#planHint").textContent = "AI 排程失败：" + err.message;
   } finally {
     setPlannerBusy(false);
   }
@@ -1157,7 +1132,11 @@ function planWarnById() {
   return map;
 }
 
-function renderPlannerPage() {
+function legacyRenderPlannerPage() {
+  if (state.suggest) {
+    renderSuggestionsPage();
+    return;
+  }
   if (!state.plan) return;
   const day = state.planDay || state.plan.date || todayISO();
   $("#planPick").value = day;
@@ -1240,7 +1219,7 @@ function renderPlannerPage() {
         const dd = DDL_LABEL[t.deadline_type] || DDL_LABEL.hard;
         const isToday = t.deadline === day;
         return `<span class="tomorrow-chip" title="${dd.text}截止${isToday ? "（今日截止）" : ""}">
-          ${esc(t.title)}${isToday ? ` <span class="t-risk">${dd.icon} 今日截止</span>` : ""}</span>`;
+          ${t.skipped ? "⏭ 已跳过·" : ""}${esc(t.title)}${isToday ? ` <span class="t-risk">${dd.icon} 今日截止</span>` : ""}</span>`;
       }).join("");
   }
   if (!html && toleranceCount) {
@@ -1298,94 +1277,214 @@ function entryHTML(e, day, warns) {
     </div>
       <div class="entry-ops">
       <button class="mini ok-todo" data-plan="adopt" data-id="${esc(e.task_id)}" title="采纳进日程">采纳</button>
-      <button class="mini" data-plan="skip" data-id="${esc(e.task_id)}" title="不采纳这条建议">跳过</button>
+      <button class="mini" data-plan="skip" data-id="${esc(e.task_id)}" title="今天先跳过，之后自动重新排期">跳过</button>
     </div>
   </div>`;
 }
 
+/* ---- 今日排程建议渲染（AI 跨日建议，采纳后才写入日程） ---- */
+const SUGGEST_DDL = {
+  hard: { text: "硬线", icon: "🔴" },
+  soft: { text: "软线", icon: "🟡" },
+};
+
+function suggestionHTML(it) {
+  const dd = SUGGEST_DDL[it.deadline_type] || null;
+  const whenDate = it.date
+    ? `${fmtDay(it.date)} ${fmtWeekday(it.date)}`
+    : "未排到具体日期";
+  const timeLine = it.time
+    ? `${esc(it.time)}${it.end_time ? "–" + esc(it.end_time) : ""}`
+    : "";
+  const deadlineLine = it.deadline
+    ? `截止 ${fmtDay(it.deadline)}${it.deadline_time ? " " + esc(it.deadline_time) : ""}`
+    : "";
+  const ddlBadge = dd
+    ? `<span class="badge" style="--c:${it.deadline_type === "hard" ? "#e5484d" : "#f59e0b"}">${dd.icon} ${dd.text}</span>`
+    : "";
+  const energyBadge = it.energy_cost != null
+    ? `<span class="badge" style="--c:#8e4ec6">⚡${it.energy_cost}点</span>`
+    : "";
+  const prob = it.probability != null ? Math.round(it.probability * 100) : null;
+  const pcls = prob == null ? "" : prob >= 75 ? "p-hi" : prob >= 60 ? "p-mid" : "p-low";
+  const risk = !!it.risk || (prob != null && prob < 60);
+  const adapt = !!it.tolerance;
+  const entryCls = (it.deadline_type === "hard" ? "ddl-hard"
+    : it.deadline_type === "soft" ? "ddl-soft" : "")
+    + (risk ? " risk-shake" : "");
+  const ops = it.date && it.time
+    ? `<div class="entry-ops">
+        <button class="mini ok-todo" data-plan="adopt" data-id="${esc(it.id)}" title="按建议日期写入日程">采纳</button>
+        <button class="mini" data-plan="skip" data-id="${esc(it.id)}" title="跳过这条建议：改日规划时再提示">跳过</button>
+      </div>`
+    : `<span class="badge" style="--c:#64748b">暂无可排时段</span>`;
+  return `
+  <div class="plan-entry ${entryCls}">
+    <div class="entry-time">${esc(whenDate)}${timeLine ? " " + timeLine : ""}</div>
+    <div class="entry-body">
+      <div class="entry-title">${esc(it.title || "未命名任务")}${ddlBadge}${energyBadge}${adapt ? `<span class="tag-adapt">⚡适配</span>` : ""}</div>
+      <div class="entry-meta">${esc(deadlineLine || "无截止")}${it.deliverable ? ` 📦 ${esc(it.deliverable)}` : ""}</div>
+      ${it.reason ? `<div class="entry-meta" style="margin-top:4px">💡 ${esc(it.reason)}</div>` : ""}
+      ${adapt ? `<div class="entry-meta" style="margin-top:4px">所需精力略高于该时段标准，但在可承受范围（≤15% 容差）内。</div>` : ""}
+      ${prob != null ? `
+      <div class="prob-bar"><i class="fill ${pcls}" style="width:${prob}%"></i></div>
+      <div class="prob-note ${risk ? "risk" : ""}">
+        ${risk ? `⚠️ 完成概率 ${prob}%，系统不太放心` : `完成概率约 ${prob}%`}
+      </div>
+      ${risk && it.risk_copy ? `<div class="entry-meta" style="margin-top:4px">💡 ${esc(it.risk_copy)}</div>` : ""}` : ""}
+    </div>
+    ${ops}
+  </div>`;
+}
+
+function renderPlannerPage() {
+  renderSuggestionsPage();
+}
+
+function todaySuggestUsed(items) {
+  const today = todayISO();
+  return (items || []).filter((x) => x.date === today)
+    .reduce((s, x) => s + (Number(x.slot_points) || 0), 0);
+}
+
+function renderSuggestionsPage() {
+  const sug = state.suggest || {};
+  const items = sug.items || [];
+  const energy = sug.energy || {};
+
+  const avail = energy.available_points || 0;
+  const used = todaySuggestUsed(items);
+  const usedRatio = avail > 0 ? used / avail : 0;
+  const remain = Math.max(0, avail - used);
+  const ratio = avail > 0 ? remain / avail : 0;
+  const color = ratio >= 0.6 ? "#22c55e" : ratio >= 0.35 ? "#f59e0b" : "#e5484d";
+  const fg = $("#ringFg");
+  fg.style.stroke = color;
+  fg.style.strokeDasharray = RING_CIRC;
+  fg.style.strokeDashoffset = RING_CIRC * (1 - ratio);
+  $("#energyHint").textContent = energy.free_runs
+    ? `${energy.free_runs} 段空闲`
+    : "今天没有空闲时段";
+  $("#energyMeta").innerHTML =
+    `可用 <b>${avail.toFixed(1)}</b> 点 · 今日建议已排 <b>${used.toFixed(1)}</b> 点` +
+    `<br>占用 <b>${Math.round(usedRatio * 100)}%</b>` +
+    `<br><span style="font-size:11px">1 点 ≈ 状态好时的 30 分钟专注</span>`;
+
+  const hours = (state.energy && state.energy.hours) || [];
+  const cells = [];
+  for (let h = 7; h <= 22; h++) {
+    const c = hours[h] || 0;
+    const pct = Math.max(6, Math.min(100, (c / 1.2) * 100));
+    cells.push(
+      `<div class="cell ${c < 0.25 ? "z" : ""}" title="${h} 点 · 系数 ${c.toFixed(1)}">
+         <i style="height:${pct}%"></i></div>`);
+  }
+  $("#curveStrip").innerHTML = cells.join("");
+
+  const box = $("#planEntries");
+  const empty = $("#planEmpty");
+  if (!items.length) {
+    box.innerHTML = "";
+    empty.innerHTML = `<div class="plan-empty">当前没有适合安排的待办 🎉
+      <br><span style="font-size:12px">这里只展示 AI 判断“目前值得规划”的任务；
+      截止还远或不紧急的待办会留在「待办」页，临近时再给出建议。</span></div>`;
+  } else {
+    empty.innerHTML = "";
+    box.innerHTML = items.map(suggestionHTML).join("");
+  }
+
+  const method = sug.method === "ai"
+    ? "🤖 AI 排期"
+    : sug.method === "none" ? "" : "规则排期";
+  $("#planHint").innerHTML =
+    (items.length ? `${items.length} 项待采纳` : "暂无排程建议") +
+    (sug.summary ? ` · ${esc(sug.summary)}` : "") +
+    (method ? ` · ${method}` : "");
+}
+
 /* ---- 计划页控件 ---- */
-function planPreferenceFeedback(action, entries) {
-  const items = (entries || []).map((e) => ({
-    id: e.task_id,
-    title: e.title,
-    date: state.planDay,
-    time: e.start || e.time || "",
-    end_time: e.end || e.end_time || "",
+function suggestFeedback(action, items) {
+  const list = (items || []).filter((x) => x.id).map((x) => ({
+    id: x.id,
+    title: x.title,
+    date: x.date || "",
+    time: x.time || "",
+    end_time: x.end_time || "",
   }));
-  if (!items.length) return Promise.resolve();
+  if (!list.length) return Promise.resolve();
   return api("/api/ai/plan/feedback", {
     method: "POST",
-    body: { action, items },
+    body: { action, items: list },
   }).catch(() => {});
 }
 
-$("#planPrev").addEventListener("click", () => { state.planDay = addDays(state.planDay, -1); loadPlanner(true); });
-$("#planNext").addEventListener("click", () => { state.planDay = addDays(state.planDay, 1); loadPlanner(true); });
-$("#planToday").addEventListener("click", () => { state.planDay = todayISO(); loadPlanner(true); });
-$("#planPick").addEventListener("change", (e) => {
-  if (e.target.value) { state.planDay = e.target.value; loadPlanner(true); }
-});
-$("#planRecomputeBtn").addEventListener("click", () => runAiPlan());
+function dropSuggestions(ids) {
+  const idSet = new Set(ids || []);
+  if (state.suggest) {
+    state.suggest.items = (state.suggest.items || []).filter((x) => !idSet.has(x.id));
+  }
+}
+
+async function adoptSuggestions(items) {
+  const planable = (items || []).filter((x) => x.id && x.date && x.time);
+  const applied = [];
+  for (const it of planable) {
+    try {
+      await api(`/api/todos/${it.id}`, {
+        method: "PATCH",
+        body: { kind: "schedule", date: it.date, time: it.time, end_time: it.end_time || null },
+      });
+      applied.push(it);
+    } catch (_) { /* 单条失败不阻塞其他建议 */ }
+  }
+  if (applied.length) {
+    await suggestFeedback("accept", applied);
+    dropSuggestions(applied.map((x) => x.id));
+    renderPlannerPage();
+    await refresh().catch(() => {});
+  }
+  return applied.length;
+}
+
+async function skipSuggestion(it) {
+  const runDate = (state.suggest && state.suggest.date) || todayISO();
+  await api("/api/plan/skip", {
+    method: "POST",
+    body: { date: runDate, task_id: it.id },
+  });
+  await suggestFeedback("reject", [it]);
+  dropSuggestions([it.id]);
+  renderPlannerPage();
+  await refresh().catch(() => {});
+}
+
+$("#planRecomputeBtn").addEventListener("click", () => loadPlanner(true, true));
 
 $("#planApplyAllBtn").addEventListener("click", async () => {
-  const plan = state.plan && state.plan.plan;
-  if (!plan || !(plan.entries || []).length) { alert("没有可采纳的排程"); return; }
-  if (!confirm(`一键把今天 ${plan.entries.length} 项建议全部写入日程？（软线顺延需单独点「同意顺延」）`)) return;
+  const items = (state.suggest && state.suggest.items || [])
+    .filter((x) => x.date && x.time);
+  if (!items.length) { alert("没有可采纳的排程建议"); return; }
+  if (!confirm(`把 ${items.length} 条建议全部写入日程？`)) return;
   try {
-    await api("/api/plan/apply", {
-      method: "POST",
-      body: { date: state.planDay, placements: (plan.entries || []).map((x) => x.task_id) },
-    });
-    await planPreferenceFeedback("accept", plan.entries || []);
-    await refresh();
-    await runAiPlan();
+    const n = await adoptSuggestions(items);
+    if (n) alert(`已采纳 ${n}/${items.length} 条建议`);
   } catch (err) { alert(err.message); }
 });
 
 $("#planEntries").addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-plan]");
   if (!btn) return;
-  if (btn.dataset.plan === "adopt") {
-    try {
-      const res = await api("/api/plan/apply", {
-        method: "POST",
-        body: { date: state.planDay, placements: [btn.dataset.id] },
-      });
-      const entry = (state.plan && state.plan.plan.entries || [])
-        .find((x) => x.task_id === btn.dataset.id);
-      if (entry) await planPreferenceFeedback("accept", [entry]);
-      await refresh();
-      await runAiPlan();
-    } catch (err) { alert(err.message); }
-  } else if (btn.dataset.plan === "skip") {
-    try {
-      const entry = (state.plan && state.plan.plan.entries || [])
-        .find((x) => x.task_id === btn.dataset.id);
-      await api("/api/plan/skip", {
-        method: "POST",
-        body: { date: state.planDay, task_id: btn.dataset.id },
-      });
-      if (entry) await planPreferenceFeedback("reject", [entry]);
-      const card = btn.closest(".plan-entry");
-      if (card) card.remove();
-    } catch (err) { alert(err.message); }
-  }
-});
-$("#planDeferrals").addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-plan]");
-  if (!btn) return;
-  const box = btn.closest(".defer-box");
-  if (btn.dataset.plan === "defer-no") { if (box) box.remove(); return; }
-  if (btn.dataset.plan === "defer-yes") {
-    try {
-      const res = await api("/api/plan/apply", {
-        method: "POST",
-        body: { date: state.planDay, deferrals: [btn.dataset.id] },
-      });
-      await refresh();
-      await runAiPlan();
-    } catch (err) { alert(err.message); }
-  }
+  const it = (state.suggest && state.suggest.items || [])
+    .find((x) => x.id === btn.dataset.id);
+  if (!it) return;
+  try {
+    if (btn.dataset.plan === "adopt") {
+      const n = await adoptSuggestions([it]);
+      if (!n) alert("采纳失败：这条建议可能已过期，点「重新规划」再试");
+    } else if (btn.dataset.plan === "skip") {
+      await skipSuggestion(it);
+    }
+  } catch (err) { alert(err.message); }
 });
 
 /* ---- 完成反馈：待办标记完成后给出精力反馈（校准曲线） ---- */

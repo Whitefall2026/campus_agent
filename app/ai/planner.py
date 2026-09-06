@@ -32,6 +32,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
 GUIDE_TTL = 25          # AI 引导结果缓存秒数（同一日期翻回/刷新秒出）
 _GUIDE_CACHE = {}
+RULE_NOW_DAYS = 3        # AI 不可用时，规则只兜底“未来几天内”值得排的任务
 
 PLAN_SYSTEM_PROMPT = """你是「校园管家」的规划助手。用户有一批还没有排期的待办，
 你要把它们安排进未来两周时间轴的空档里，像真人助理一样考虑优先级、截止时间和节奏。
@@ -51,6 +52,34 @@ PLAN_SYSTEM_PROMPT = """你是「校园管家」的规划助手。用户有一�
 
 只输出严格 JSON，不要 Markdown：
 {"summary":"给用户的一句话总结","plan":[{"id":"待办id","date":"YYYY-MM-DD","time":"HH:MM","end_time":"HH:MM","reason":"一句话理由"}]}
+"""
+
+SELECTIVE_PLAN_SYSTEM = """你是「校园管家」的规划助手，负责判断“现在值不值得把某条待办排进日程”。
+用户通常有一整池待办，其中很多截止日期还很远、并不紧急——不要把它们全部排出来，
+只挑选目前值得规划的任务。
+
+判断标准（结合输入里的用户状态/处境、长期记忆、精力曲线与近期反馈）：
+- 已逾期 / 临近截止 / 近期必须交付的任务优先；
+- 负载高或精力低时更要少排、留白，不要一次塞很多；
+- 截止还很远的低优先级任务不要安排；
+- 如果某条任务要做，给一条建议日期与时段：只能在占用时段之外，09:00-21:00，
+  不晚于它的截止日（没有截止的也不能排到过去）；
+- 安排在“今天”的时段必须晚于输入里的“当前时间”，不要安排已经过去的
+  时间段；今天尽量给当前时间之后最近的合适空档；
+- 同一天不要给两条任务同一个时段。
+
+给每条选中的建议同时做“完成概率推演”：综合该任务的截止紧迫度、用户当前状态、
+长期记忆里体现的偏好/性格、精力曲线对应时段系数、历史完成率基线以及当天安排
+密度，估计用户按这个时段完成的把握。probability 给 0 到 1 的小数；
+低于 0.6 必须 risk=true，并写一句 risk_copy：温和、可执行的建议（例如
+“先只做开头一小步/交付骨架版/换到状态更好的时段/降低完成标准/拆成子任务”），
+不要制造焦虑，也不要编造证据里没有的事实。
+
+只输出严格 JSON，不要 Markdown；plan 可以只包含你选择的条目，不必覆盖全部待办：
+{"summary":"给用户的一句话总结",
+ "plan":[{"id":"待办id","date":"YYYY-MM-DD","time":"HH:MM","end_time":"HH:MM",
+          "reason":"一句话理由","probability":0.0到1.0,
+          "risk":true或false,"risk_copy":"风险/建议文案（无风险可留空）"}]}
 """
 
 
@@ -109,8 +138,12 @@ def _priority_rank(t) -> int:
     return {"high": 0, "medium": 1, "low": 2}.get(t.get("priority"), 1)
 
 
-def _rule_choice(t, busy: dict, start_date: date) -> dict | None:
-    """为单条待办找规则空档。返回 {date,time,end_time,reason} 或 None。"""
+def _rule_choice(t, busy: dict, start_date: date, taken: dict | None = None) -> dict | None:
+    """为单条待办找规则空档。返回 {date,time,end_time,reason} 或 None。
+
+    taken 为本次规划里已占用的 {date: [(start,end), ...]}，避免同一天
+    给两条待办建议同一个时段。
+    """
     deadline = str(t.get("deadline") or "").strip()
     today = _now().date()
     first_day = start_date
@@ -136,7 +169,9 @@ def _rule_choice(t, busy: dict, start_date: date) -> dict | None:
     for i in range(span + 1):
         d = first_day + timedelta(days=i)
         iso = d.isoformat()
-        intervals = busy.get(iso, [])
+        intervals = sorted(
+            list(busy.get(iso, [])) + list((taken or {}).get(iso, []))
+        )
         for slot in SUGGEST_SLOTS:
             if d == today and slot <= now_hm:
                 continue
@@ -152,8 +187,12 @@ def _rule_choice(t, busy: dict, start_date: date) -> dict | None:
 
 
 def _context_text(todos: list, busy: dict, state: dict) -> str:
-    today = _now().date()
-    lines = [f"今天：{today.isoformat()}（周{'一二三四五六日'[today.weekday()]}）"]
+    now = _now()
+    today = now.date()
+    lines = [
+        f"今天：{today.isoformat()}（周{'一二三四五六日'[today.weekday()]}）",
+        f"当前时间：{now.strftime('%H:%M')}（今天只能排这个时间之后、尚未开始的时段）",
+    ]
     state_lines = []
     for k, label in (("energy", "精力"), ("task_load", "事务负载"),
                      ("external_pressure", "外部压力")):
@@ -163,6 +202,16 @@ def _context_text(todos: list, busy: dict, state: dict) -> str:
     if state_lines:
         lines.append("用户状态：" + "、".join(state_lines))
     lines.extend(_energy_context_lines())
+    mem_lines = []
+    for m in user_memory.list_memories()[:8]:
+        prefix = "性格：" if m.get("kind") == "personality" else "偏好："
+        mem_lines.append(prefix + str(m.get("content") or ""))
+    if mem_lines:
+        lines.append("长期记忆：" + "；".join(mem_lines))
+    hours = _energy_hours()
+    if hours:
+        lines.append("精力系数(07-23)：" + " ".join(
+            "{:.2f}".format(v) for v in hours))
     lines.append("\n待排期待办：")
     for t in todos:
         dl = t.get("deadline") or ""
@@ -222,6 +271,19 @@ def _energy_context_lines() -> list:
     return out
 
 
+def _energy_hours() -> list:
+    """读取精力曲线的 07-23 点系数；文件缺失/异常时返回空列表。"""
+    try:
+        with open(os.path.join(DATA_DIR, "planner_profile.json"),
+                  "r", encoding="utf-8") as f:
+            hours = (json.load(f) or {}).get("hours") or []
+        if isinstance(hours, list) and len(hours) >= 23:
+            return [float(x) for x in hours[7:23]]
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+    return []
+
+
 def _parse_ai_plan(content: str):
     text = ai_gateway._strip_json_fence(content or "")
     data = json.loads(text)
@@ -229,6 +291,62 @@ def _parse_ai_plan(content: str):
         raise ValueError("plan 不是 JSON 对象")
     plan = data.get("plan") if isinstance(data.get("plan"), list) else []
     return str(data.get("summary") or "").strip(), plan
+
+
+def _risk_float(v):
+    """把模型给的 probability 规整到 0~1；非法返回 None。"""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if f != f:  # NaN
+        return None
+    return max(0.0, min(1.0, f))
+
+
+def _risk_bool(v, probability) -> bool:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        if v.strip().lower() in ("true", "1", "yes", "是", "有风险"):
+            return True
+        if v.strip().lower() in ("false", "0", "no", "否"):
+            return False
+    return probability is not None and probability < 0.6
+
+
+def _parse_selective_plan(content: str):
+    """解析选择性规划输出（带 AI 完成概率/风险字段）。
+
+    返回 (summary, items)；每条 item 为
+    {id,date,time,end_time,reason,probability,risk,risk_copy}。
+    """
+    text = ai_gateway._strip_json_fence(content or "")
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("plan 不是 JSON 对象")
+    plan = data.get("plan") if isinstance(data.get("plan"), list) else []
+    summary = str(data.get("summary") or "").strip()
+    out = []
+    for raw in plan:
+        if not isinstance(raw, dict):
+            continue
+        tid = str(raw.get("id") or "")
+        if not tid:
+            continue
+        probability = _risk_float(raw.get("probability"))
+        risk = _risk_bool(raw.get("risk"), probability)
+        out.append({
+            "id": tid,
+            "date": str(raw.get("date") or ""),
+            "time": str(raw.get("time") or ""),
+            "end_time": str(raw.get("end_time") or ""),
+            "reason": str(raw.get("reason") or "").strip()[:200],
+            "probability": probability,
+            "risk": risk,
+            "risk_copy": str(raw.get("risk_copy") or "").strip()[:240],
+        })
+    return summary, out
 
 
 def _norm_time(v):
@@ -267,9 +385,28 @@ def _safe_plan_item(raw: dict, t, busy: dict, start_date: date) -> dict | None:
     }
 
 
-def plan_open_todos() -> dict:
-    """规划全部未排期待办，返回建议列表（AI 优先 + 规则兜底）。"""
-    todos = _unplanned_todos(load_todos())
+def plan_open_todos(todos: list | None = None,
+                    exclude_skipped: str | None = None) -> dict:
+    """规划全部未排期待办，返回建议列表（AI 优先 + 规则兜底）。
+
+    - todos：可传入待办列表（缺省从 data/todos.json 读取）；
+    - exclude_skipped：某个日期（YYYY-MM-DD），该天被用户“跳过”的任务
+      不参与本轮规划，改日（其他日期）再提示。
+    """
+    if todos is None:
+        todos = load_todos()
+    todos = _unplanned_todos(todos)
+    today_s = _now().date().isoformat()
+    if exclude_skipped:
+        skip_s = str(exclude_skipped)
+        todos = [
+            t for t in todos
+            if skip_s not in [str(x) for x in (t.get("plan_skipped_dates") or [])]
+        ]
+    todos = [
+        t for t in todos
+        if not (str(t.get("plan_defer_to") or "") > today_s)
+    ]
     if not todos:
         return {"ok": True, "method": "none", "summary": "当前没有需要排期的待办",
                 "items": []}
@@ -307,16 +444,40 @@ def plan_open_todos() -> dict:
             ai_result = None
 
     items = []
+    taken: dict = {}
     ai_by_id = {str(x["id"]): x for x in ai_result or []}
+    ai_used = False
+
+    def _taken_hit(item: dict) -> bool:
+        d = str(item.get("date") or "")
+        s = str(item.get("time") or "")
+        e = str(item.get("end_time") or "")
+        if not (d and s and e):
+            return False
+        return _clash(s, e, taken.get(d, []))
+
+    def _take(item: dict) -> None:
+        d = str(item.get("date") or "")
+        s = str(item.get("time") or "")
+        e = str(item.get("end_time") or "")
+        if d and s and e:
+            taken.setdefault(d, []).append((s, e))
+
     for t in todos:
         tid = str(t["id"])
         meta = {"title": t.get("title"), "deadline": t.get("deadline")}
-        if tid in ai_by_id:
-            items.append({**ai_by_id[tid], **meta})
-            continue
-        choice = _rule_choice(t, busy, start_date)
+        choice = None
+        if tid in ai_by_id and not _taken_hit(ai_by_id[tid]):
+            choice = {**ai_by_id[tid], **meta}
+            ai_used = True
+        else:
+            # AI 建议撞车/缺失时退回规则重选（会避开本批已占用的时段）
+            fallback = _rule_choice(t, busy, start_date, taken)
+            if fallback:
+                choice = {**fallback, **meta}
         if choice:
-            items.append({"id": t["id"], **choice, **meta})
+            items.append({"id": t["id"], **choice})
+            _take(choice)
         else:
             items.append({
                 "id": t["id"], "date": None, "time": None, "end_time": None,
@@ -324,10 +485,154 @@ def plan_open_todos() -> dict:
                 **meta,
             })
     planned = sum(1 for x in items if x.get("date"))
-    if method == "ai":
+    if method == "ai" and ai_used:
         summary = f"我按你的空闲时段和截止时间把待办排好了：{planned} 条可采纳。"
     else:
         summary = f"按空闲时段与截止时间自动规划：{planned} 条可采纳。"
+    return {"ok": True, "method": "ai" if ai_used else method,
+            "summary": summary, "items": items}
+
+
+def _rule_now_candidates(todos: list, today: date) -> list:
+    """AI 不可用时规则兜底的候选：逾期、未来 RULE_NOW_DAYS 天内截止，
+    或顺延日已到的任务；无截止且不紧急的任务不自动建议。"""
+    horizon = today + timedelta(days=RULE_NOW_DAYS)
+    today_s = today.isoformat()
+    out = []
+    for t in todos:
+        defer_to = str(t.get("plan_defer_to") or "")
+        dl = str(t.get("deadline") or "")
+        if defer_to:
+            if defer_to <= today_s:
+                out.append(t)
+            continue
+        if not dl:
+            continue
+        try:
+            d = date.fromisoformat(dl)
+        except ValueError:
+            continue
+        if d <= horizon:
+            out.append(t)
+    return out
+
+
+def plan_recommend_now(todos: list | None = None,
+                       exclude_skipped: str | None = None) -> dict:
+    """今日计划页的“选择性”排程建议。
+
+    不把整池待办都排出来，而是让 AI 判断哪些目前值得规划：
+    - AI 可用：模型从全部未排期待办中挑选并给出时段，同时对每条建议做
+      完成概率推演（probability/risk/risk_copy），综合画像、记忆与历史；
+    - AI 不可用/失败：规则只兜底逾期、未来几天内截止或顺延到期的任务，
+      概率字段由调用方用规则模拟补全。
+    """
+    if todos is None:
+        todos = load_todos()
+    todos = _unplanned_todos(todos)
+    today = _now().date()
+    today_s = today.isoformat()
+    if exclude_skipped:
+        skip_s = str(exclude_skipped)
+        todos = [
+            t for t in todos
+            if skip_s not in [str(x) for x in (t.get("plan_skipped_dates") or [])]
+        ]
+    todos = [
+        t for t in todos
+        if not (str(t.get("plan_defer_to") or "") > today_s)
+    ]
+    if not todos:
+        return {"ok": True, "method": "none", "summary": "当前没有需要排期的待办",
+                "items": []}
+
+    ordered = sorted(todos, key=lambda t: (
+        _deadline_key(t), _priority_rank(t), str(t.get("title") or "")))
+    busy = _busy_map()
+    state = user_profile.latest_state() or {}
+    taken: dict = {}
+    items: list = []
+    summary = ""
+    method = "rule"
+    cfg = ai_gateway.load_config()
+    risk_missing = False
+
+    if ai_gateway.is_ready(cfg):
+        try:
+            content = ai_gateway.chat_completion(cfg, [
+                {"role": "system", "content": SELECTIVE_PLAN_SYSTEM},
+                {"role": "user", "content": _context_text(ordered, busy, state)},
+            ])
+            ai_summary, plan = _parse_selective_plan(content)
+            by_id = {str(t.get("id")): t for t in ordered}
+            seen = set()
+            for raw in plan:
+                if not isinstance(raw, dict):
+                    continue
+                t = by_id.get(str(raw.get("id") or ""))
+                if t is None or str(t["id"]) in seen:
+                    continue
+                item = _safe_plan_item(raw, t, busy, today)
+                if item is None:
+                    continue
+                d = str(item.get("date") or "")
+                s = str(item.get("time") or "")
+                e = str(item.get("end_time") or "")
+                if d and s and e and _clash(s, e, taken.get(d, [])):
+                    continue
+                meta = {"title": t.get("title"), "deadline": t.get("deadline")}
+                item = {
+                    "id": t["id"],
+                    **item,
+                    **meta,
+                    "probability": raw.get("probability"),
+                    "risk": raw.get("risk"),
+                    "risk_copy": str(raw.get("risk_copy") or "").strip()[:240],
+                }
+                if item.get("probability") is None:
+                    risk_missing = True
+                items.append(item)
+                taken.setdefault(d, []).append((s, e))
+                seen.add(str(t["id"]))
+            method = "ai"
+            summary = ai_summary
+        except Exception:
+            items = []
+            taken = {}
+            risk_missing = False
+
+    if method == "rule" or risk_missing:
+        # AI 不可用/失败 → 规则兜底；只排近期值得推进的任务
+        method = "rule"
+        summary = ""
+        taken = {}
+        items = []
+        for t in _rule_now_candidates(ordered, today):
+            choice = _rule_choice(t, busy, today, taken)
+            if choice is None:
+                continue
+            meta = {"title": t.get("title"), "deadline": t.get("deadline")}
+            items.append({"id": t["id"], **choice, **meta})
+            taken.setdefault(str(choice.get("date") or ""), []).append(
+                (str(choice.get("time") or ""), str(choice.get("end_time") or "")))
+
+    # 防御：今天的建议不能落在“当前时间之前（已过去）”
+    now_hm = _now().strftime("%H:%M")
+    today_s2 = today.isoformat()
+    items = [
+        x for x in items
+        if not (str(x.get("date") or "") == today_s2
+                and str(x.get("time") or "")
+                and str(x.get("time")) <= now_hm)
+    ]
+
+    if method == "rule" and not summary:
+        planned = sum(1 for x in items if x.get("date"))
+        if items:
+            summary = "AI 当前不可用，已按“临近截止”规则给出 {} 条可采纳建议。".format(
+                planned)
+        else:
+            summary = "目前没有临近截止、值得马上排期的新任务。"
     return {"ok": True, "method": method, "summary": summary, "items": items}
 
 

@@ -320,6 +320,23 @@ class TestPlanner(unittest.TestCase):
         cands_tomorrow = planner.candidate_tasks([t], tomorrow)
         self.assertEqual(len(cands_tomorrow), 1)
 
+    def test_offered_on_past_day_does_not_block_replan(self):
+        # 曾在昨天给出方案但未采纳的任务，今天不应被 plan_offered_date 永久卡住
+        today = self.day
+        t = mk_todo("t1", "数学作业", deadline=today.isoformat(),
+                    plan_offered_date=(today - timedelta(days=1)).isoformat())
+        cands = planner.candidate_tasks([t], today)
+        self.assertEqual(len(cands), 1)
+
+    def test_skipped_task_returns_as_candidate_next_day(self):
+        # 跳过只绑定当天，之后的日子恢复候选（用于“跳过 → 之后重新排期”）
+        today = self.day
+        tomorrow = today + timedelta(days=1)
+        t = mk_todo("t1", "程序设计作业", duration_min=60,
+                    plan_skipped_dates=[today.isoformat()])
+        self.assertEqual(len(planner.candidate_tasks([t], today)), 0)
+        self.assertEqual(len(planner.candidate_tasks([t], tomorrow)), 1)
+
     def test_include_courses_no_crash(self):
         todos = [mk_todo("t1", "普通任务", duration_min=30, energy_cost=1)]
         plan = planner.plan_day(todos, day=self.day)  # 默认 include_courses=True

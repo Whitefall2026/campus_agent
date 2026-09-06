@@ -127,17 +127,7 @@
   <section class="page page-planner hidden" data-page="planner">
     <div class="page-head">
       <h1>今日能量计划</h1>
-      <p class="page-sub">按你的精力曲线为待办排期：⚡容差适配、风险预判、软线顺延都先给你看，采纳后才写入日程</p>
-    </div>
-
-    <div class="schedule-toolbar">
-      <button id="planPrev" class="ghost">‹</button>
-      <input type="date" id="planPick">
-      <button id="planToday" class="ghost small">今天</button>
-      <button id="planNext" class="ghost">›</button>
-      <div class="day-title" id="planTitle"></div>
-      <div class="spacer"></div>
-      <button id="planRecomputeBtn" class="ghost small" title="重新计算这一天（会自动避开已采纳的排程）">↻ 重新规划</button>
+      <p class="page-sub">AI 结合你的画像、处境与精力曲线，只挑目前值得规划的待办给出排期建议；采纳后才写入日程</p>
     </div>
 
     <div class="planner-grid">
@@ -165,6 +155,7 @@
           <div class="card-head">
             <h2>📋 排程建议</h2>
             <span class="hint" id="planHint"></span>
+            <button id="planRecomputeBtn" class="ghost small" title="重新规划（会把今天跳过的任务重新纳入考虑）">↻ 重新规划</button>
             <button id="planApplyAllBtn" class="primary small">一键采纳排程</button>
           </div>
           <div id="planWarnings" class="plan-warnings"></div>

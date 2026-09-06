@@ -12,6 +12,7 @@ import uuid
 import unittest
 from datetime import date, timedelta
 
+from app.ai import planner as ai_planner
 from app.planner import decompose, llm_copies, planner, risk, shield, store
 from app.paths import DATA_DIR
 
@@ -163,6 +164,34 @@ class TestRisk(unittest.TestCase):
             self.assertEqual(ev["type"], "done")
             self.assertEqual(ev["weekday"], 3)
             self.assertEqual(ev["rating"], "tough")
+
+
+class TestSelectiveRiskParse(unittest.TestCase):
+    def test_parse_selective_plan_with_risk(self):
+        content = (
+            '{"summary":"挑了2条","plan":['
+            '{"id":"a","date":"2026-09-07","time":"09:00","end_time":"10:00",'
+            '"reason":"临近","probability":0.42,"risk":true,"risk_copy":"先拆小步"},'
+            '{"id":"b","date":"2026-09-08","time":"14:00","end_time":"15:00",'
+            '"reason":"缓冲","probability":0.8,"risk":false,"risk_copy":""}]}'
+        )
+        summary, items = ai_planner._parse_selective_plan(content)
+        self.assertEqual(summary, "挑了2条")
+        self.assertEqual(len(items), 2)
+        self.assertAlmostEqual(items[0]["probability"], 0.42)
+        self.assertTrue(items[0]["risk"])
+        self.assertEqual(items[0]["risk_copy"], "先拆小步")
+        self.assertAlmostEqual(items[1]["probability"], 0.8)
+        self.assertFalse(items[1]["risk"])
+
+    def test_parse_selective_plan_clamps_and_defaults(self):
+        content = (
+            '{"summary":"","plan":[{"id":"a","date":"2026-09-07",'
+            '"time":"09:00","end_time":"10:00","probability":1.7}]}'
+        )
+        summary, items = ai_planner._parse_selective_plan(content)
+        self.assertEqual(items[0]["probability"], 1.0)
+        self.assertFalse(items[0]["risk"])
 
 
 class TestShield(unittest.TestCase):

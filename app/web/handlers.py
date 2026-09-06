@@ -37,8 +37,6 @@ from app.wechat.bridge import BRIDGE as WX_BRIDGE
 from app.paths import DATA_DIR, STATIC_DIR
 from app.core import courses as course_mod
 
-_PLAN_CACHE = {}
-_PLAN_TTL = 25
 from app.planner import energy as plan_energy
 from app.planner import fields as plan_fields
 from app.planner import planner as plan_engine
@@ -47,6 +45,47 @@ from app.planner import shield as plan_shield
 from app.planner import decompose as plan_decompose
 from app.planner import store as plan_store
 from app.planner import llm_copies as plan_llm
+
+_BROWSE_CACHE = {}   # (iso, todos_mtime) -> (ts, 浏览快照 payload)
+_DATE_PLANS = {}     # iso -> (生成时 todos_mtime, AI 排程 payload)
+_PLAN_TTL = 25
+
+
+def _ai_candidate_ids(todos: list, iso: str) -> list:
+    """某个日期（今天或未来某天）计划模式的候选任务。
+
+    - 未来截止的任务可以提前安排（引擎不再预过滤日期）；
+    - 截止日在「今天之后、该计划日之前」的任务不能排到截止之后；
+    - 用户当天已“跳过”的、以及顺延到未来日期的任务不参与；
+    - 不因 plan_offered_date 绑定在某个过去/今天而永久消失。
+    """
+    out = []
+    today_s = date.today().isoformat()
+    for t in todos:
+        if t.get("status") == "done":
+            continue
+        if kinds.valid_kind(t.get("kind")) != kinds.KIND_TODO:
+            continue
+        if t.get("date") or t.get("time"):
+            continue
+        dl = str(t.get("deadline") or "")
+        if dl and dl > today_s and dl < iso:
+            continue  # 已越过截止日，不应安排到截止之后
+        if iso in [str(x) for x in (t.get("plan_skipped_dates") or [])]:
+            continue
+        defer_to = str(t.get("plan_defer_to") or "")
+        if defer_to and defer_to > iso:
+            continue
+        out.append(str(t.get("id")))
+    return out
+
+
+def _todos_mtime() -> float:
+    try:
+        return os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
+    except OSError:
+        return 0.0
+
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -57,6 +96,55 @@ MIME = {
     ".png": "image/png",
     ".ico": "image/x-icon",
 }
+
+
+def _enrich_rule_risk(items: list) -> list:
+    """用原能量引擎的蒙特卡洛模拟给建议补全概率/风险（规则兜底路径）。
+
+    AI 未启用或 AI 没给出概率字段时使用；按目标日期分组，同一天内的
+    多条按时间顺序参与模拟，保持和历史实现一致。
+    """
+    groups = {}
+    for it in items:
+        if not it.get("date") or not it.get("time"):
+            continue
+        groups.setdefault(str(it["date"]), []).append(it)
+    result = {}
+    for d, its in groups.items():
+        entries = []
+        for it in its:
+            try:
+                dur = max(15, int(it.get("duration_min") or 60))
+            except (TypeError, ValueError):
+                dur = 60
+            entries.append({
+                "task_id": str(it.get("id")),
+                "title": it.get("title"),
+                "start": it.get("time"),
+                "end": it.get("end_time"),
+                "duration_min": dur,
+                "energy_cost": it.get("energy_cost"),
+                "deadline": it.get("deadline"),
+                "deadline_type": it.get("deadline_type"),
+                "deliverable": it.get("deliverable"),
+            })
+        try:
+            seed = int(str(d).replace("-", ""))
+        except ValueError:
+            seed = None
+        plan = plan_risk.plan_with_risk(
+            {"date": d, "entries": entries}, seed=seed)
+        for e in plan.get("entries") or []:
+            result[str(e.get("task_id"))] = e
+    for it in items:
+        e = result.get(str(it.get("id")))
+        if e is None:
+            continue
+        it["probability"] = float(e.get("probability") or 0.0)
+        it["risk"] = bool(e.get("risk"))
+        it["risk_copy"] = str(e.get("risk_copy") or "")
+    return items
+
 
 SAMPLE_TEXTS = [
     "明天上午9点去图书馆写论文，重要",
@@ -191,33 +279,27 @@ class Handler(BaseHTTPRequestHandler):
     def _plan_payload(self, todos, day, ai: bool = False):
         """当日规划 + 风险评估 + 负载指标。
 
-        ai=False：浏览模式，返回缓存/引擎快照（翻页秒开，不触发 AI）；
-        ai=True：AI 排程模式（点“重新规划”时调用），结果写入缓存。
+        ai=False：浏览模式。若该日期已有「本次会话生成过」的排程方案
+        （且待办未变化），原样返回，翻页/翻回不会丢方案；否则返回引擎
+        快照（不生成排程，不触发 AI）。
+        ai=True：AI 排程模式（首次进计划页自动触发 / 点“重新规划”时
+        调用），结果按日期缓存，作为浏览模式回显的依据。
         """
         iso = day.isoformat()
-        try:
-            mtime = os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
-        except OSError:
-            mtime = 0
-        key = (iso, mtime)
-        hit = _PLAN_CACHE.get(key)
-        if not ai and hit and time.time() - hit[0] < _PLAN_TTL:
-            return copy.deepcopy(hit[1])
+        mtime = _todos_mtime()
+        today_iso = date.today().isoformat()
+        if not ai:
+            cached = _DATE_PLANS.get(iso)
+            if cached is not None and cached[0] == mtime:
+                return copy.deepcopy(cached[1])
+            bkey = (iso, mtime)
+            bhit = _BROWSE_CACHE.get(bkey)
+            if bhit and time.time() - bhit[0] < _PLAN_TTL:
+                return copy.deepcopy(bhit[1])
         if ai:
             # AI 自己决定候选范围：所有未排期待办都交给它，
             # 未来截止的任务也可以提前安排（引擎不再预过滤日期）。
-            cand_ids = []
-            for t in todos:
-                if t.get("status") == "done":
-                    continue
-                if kinds.valid_kind(t.get("kind")) != kinds.KIND_TODO:
-                    continue
-                if t.get("date") or t.get("time"):
-                    continue
-                offered = str(t.get("plan_offered_date") or "")
-                if offered and offered != iso:
-                    continue
-                cand_ids.append(str(t.get("id")))
+            cand_ids = _ai_candidate_ids(todos, iso)
             guide = ai_planner.guide_day_order(
                 todos, day.isoformat(), candidate_ids=cand_ids or None)
             engine_ids = guide.get("order") or cand_ids
@@ -253,22 +335,69 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 plan0 = plan_engine.plan_day(
                     todos, day=day, candidate_ids=cand_ids or None)
+                plan0["meta"]["ai_guided"] = True
         else:
             plan0 = plan_engine.plan_day(todos, day=day)
             plan0["meta"]["view_only"] = True
             plan0["entries"] = []
             plan0["tomorrow"] = []
             plan0["deferrals"] = []
+            # 浏览快照不展示任何方案，能量占用也应为 0，
+            # 否则会出现“排程为空但能量环已占用”的自相矛盾
+            plan0["budget"]["planned_points"] = 0
+            plan0["budget"]["planned_ratio"] = 0
+            if iso >= today_iso:
+                # 今天/未来某天首次打开时，用“计划模式候选”数量触发自动规划；
+                # 过去的日期只浏览历史，不做规划提示
+                plan0["meta"]["candidates"] = len(_ai_candidate_ids(todos, iso))
         seed = day.year * 10000 + day.month * 100 + day.day
         plan = plan_risk.plan_with_risk(plan0, seed=seed)
         load = plan_shield.load_metrics(todos, day=day, plan=plan0)
+        if ai:
+            self._append_skipped_tomorrow(todos, iso, plan)
         payload = {"ok": True, "date": iso, "plan": plan, "load": load}
-        _PLAN_CACHE[key] = (time.time(), payload)
-        if len(_PLAN_CACHE) > 60:
-            stale = sorted(_PLAN_CACHE.items(), key=lambda kv: kv[1][0])[:30]
-            for k, _v in stale:
-                _PLAN_CACHE.pop(k, None)
+        if ai:
+            _DATE_PLANS[iso] = (mtime, payload)
+            if len(_DATE_PLANS) > 60:
+                for k in list(_DATE_PLANS)[:30]:
+                    _DATE_PLANS.pop(k, None)
+        else:
+            _BROWSE_CACHE[bkey] = (time.time(), payload)
+            if len(_BROWSE_CACHE) > 60:
+                for k in list(_BROWSE_CACHE)[:30]:
+                    _BROWSE_CACHE.pop(k, None)
         return payload
+
+    def _append_skipped_tomorrow(self, todos, iso, plan):
+        """今天被“跳过”的任务放到明日优先里，让用户看到它会在之后重新排期。"""
+        skipped = {
+            str(t.get("id")) for t in todos
+            if iso in [str(x) for x in (t.get("plan_skipped_dates") or [])]
+        }
+        if not skipped:
+            return
+        have = {str(x.get("task_id")) for x in (plan.get("tomorrow") or [])}
+        extra = []
+        for t in todos:
+            tid = str(t.get("id") or "")
+            if tid not in skipped or tid in have:
+                continue
+            if t.get("status") == "done":
+                continue
+            if kinds.valid_kind(t.get("kind")) != kinds.KIND_TODO:
+                continue
+            if t.get("date") or t.get("time"):
+                continue
+            extra.append({
+                "task_id": tid,
+                "title": t.get("title"),
+                "deadline": t.get("deadline"),
+                "deadline_type": t.get("deadline_type"),
+                "energy_cost": t.get("energy_cost"),
+                "skipped": True,
+            })
+        if extra:
+            plan["tomorrow"] = (plan.get("tomorrow") or []) + extra
 
     def _day_from(self, body_or_query, fallback):
         try:
@@ -513,28 +642,91 @@ class Handler(BaseHTTPRequestHandler):
                 "weeks_total": meta.get("weeks_total", 0),
             })
         if path == "/api/plan/ai":
-            # 规划只锚定“真实今天”，与页面浏览到哪一天无关
-            day = date.today()
-            todos = load_todos()
-            payload = self._plan_payload(todos, day, ai=True)
-            entries = (payload.get("plan") or {}).get("entries") or []
-            if entries:
-                by_id = {str(t.get("id")): t for t in todos}
-                iso = day.isoformat()
-                changed = False
-                for e in entries:
-                    t = by_id.get(str(e.get("task_id") or ""))
-                    if t is not None and str(t.get("plan_offered_date") or "") != iso:
-                        t["plan_offered_date"] = iso
-                        changed = True
-                if changed:
-                    save_todos(todos)
+            # 规划作用于“当前打开/选择的日期”：今天和未来几天都会生成方案
+            day = self._day_from(body.get("date"), date.today())
+            payload = self._plan_payload(load_todos(), day, ai=True)
             return self._json(payload)
+        if path == "/api/plan/suggest":
+            # 今日计划页的 AI 排程建议：AI 判断“目前值得规划”的待办，
+            # 给出带目标日期的时段建议，供用户逐条采纳或跳过。
+            todos = load_todos()
+            today = date.today()
+            iso = today.isoformat()
+            # include_skipped=true：用户点「重新规划」时，今天跳过过的任务
+            # 也可以重新进入规划；默认自动规划仍会排除当天跳过的任务。
+            include_skipped = bool(body.get("include_skipped"))
+            plan = ai_planner.plan_recommend_now(
+                todos=todos,
+                exclude_skipped=None if include_skipped else iso)
+            items = plan.get("items") or []
+            by_id = {str(t.get("id")): t for t in todos}
+            enriched = []
+            for it in items:
+                t = by_id.get(str(it.get("id") or "")) or {}
+                it = dict(it)
+                it["energy_cost"] = t.get("energy_cost")
+                it["duration_min"] = t.get("duration_min") or 60
+                it["deadline_type"] = t.get("deadline_type")
+                it["deadline_time"] = t.get("deadline_time")
+                it["deliverable"] = t.get("deliverable")
+                it["priority"] = t.get("priority")
+                if it.get("date") and it.get("time"):
+                    start = plan_fields.hm_to_min(str(it.get("time")))
+                    if start is not None:
+                        it["slot_points"] = round(
+                            plan_energy.block_points(
+                                start, int(it["duration_min"])), 2)
+                enriched.append(it)
+            enriched.sort(key=lambda x: (
+                str(x.get("date") or "9999-99-99"),
+                str(x.get("time") or "99:99"),
+            ))
+            # 概率推演：AI 已给出完整 probability/risk 时直接透传；
+            # 否则（规则兜底/AI 漏字段）用能量引擎蒙特卡洛补全。
+            need_rule_risk = (plan.get("method") != "ai") or any(
+                x.get("probability") is None for x in enriched)
+            if need_rule_risk:
+                _enrich_rule_risk(enriched)
+            for x in enriched:
+                ec = x.get("energy_cost")
+                sp = x.get("slot_points")
+                x["tolerance"] = bool(
+                    ec is not None and sp is not None
+                    and float(ec) > float(sp))
+                x.setdefault("probability", None)
+                x.setdefault("risk", False)
+                x.setdefault("risk_copy", "")
+            runs = plan_engine.free_runs(todos, today)
+            available = round(sum(r["points"] for r in runs), 2)
+            used = round(sum(
+                float(x.get("slot_points") or 0)
+                for x in enriched if x.get("date") == iso
+            ), 2)
+            return self._json({
+                "ok": True,
+                "date": iso,
+                "method": plan.get("method"),
+                "summary": plan.get("summary") or "",
+                "items": enriched,
+                "energy": {
+                    "free_runs": len(runs),
+                    "available_points": available,
+                    "used_points": used,
+                    "planned_ratio": round(used / available, 3) if available else 0,
+                },
+            })
         if path == "/api/plan/apply":
             # 采纳某天的能量规划：placements=排程、deferrals=软线顺延（可只给其一）
             todos = load_todos()
             day = self._day_from(body.get("date"), date.today())
-            plan0 = plan_engine.plan_day(todos, day=day)
+            iso = day.isoformat()
+            cached = _DATE_PLANS.get(iso)
+            if cached is not None and cached[0] == _todos_mtime():
+                # 优先采纳页面展示的那份排程（含 AI 提议的具体时段），
+                # 避免重新计算时用另一套候选口径而采纳落空
+                plan0 = cached[1]["plan"]
+            else:
+                plan0 = plan_engine.plan_day(todos, day=day)
             placements = body.get("placements")
             deferrals = body.get("deferrals")
             if placements is not None and not isinstance(placements, list):
@@ -548,6 +740,7 @@ class Handler(BaseHTTPRequestHandler):
                 todos, plan0,
                 task_ids=[str(x) for x in deferrals] if deferrals is not None else None)
             save_todos(todos)
+            _DATE_PLANS.pop(iso, None)
             return self._json({
                 "ok": True,
                 "placed": len(applied_p),
@@ -555,7 +748,8 @@ class Handler(BaseHTTPRequestHandler):
                 "state": self._state(),
             })
         if path == "/api/plan/skip":
-            # 用户今天跳过某条建议：记录后当天不再重复提议
+            # 用户今天跳过某条建议：当天不再重复提议，之后的日子恢复候选，
+            # 由重新规划把它们安排到后续的时间段。
             todos = load_todos()
             task_id = str(body.get("task_id") or "")
             day_s = str(body.get("date") or "")
@@ -566,7 +760,11 @@ class Handler(BaseHTTPRequestHandler):
             if day_s and day_s not in skipped:
                 skipped.append(day_s)
             todo["plan_skipped_dates"] = skipped
+            if "plan_offered_date" in todo:
+                todo["plan_offered_date"] = None
             save_todos(todos)
+            if day_s:
+                _DATE_PLANS.pop(day_s, None)
             return self._json({"ok": True, "state": self._state()})
         if path == "/api/plan/move":
             # 用户拖拽/手动调整任务时间：落库并记录偏好

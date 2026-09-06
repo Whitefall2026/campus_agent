@@ -71,6 +71,299 @@ class TestApiIntegration(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read().decode("utf-8") or "{}")
 
+    def _reset_plan(self):
+        """清空待办并重置今日排程缓存，保证每个用例从确定状态开始。"""
+        self.req("POST", "/api/clear", {"scope": "all"})
+        self.req("POST", "/api/plan/ai", {"date": date.today().isoformat()})
+
+    def test_first_visit_reports_planable_candidates(self):
+        # 只有未来截止的未排期待办时，首访计划页也应看到候选并触发自动规划
+        self._reset_plan()
+        today = date.today().isoformat()
+        deadline = (date.today() + timedelta(days=2)).isoformat()
+        s, res = self.req("POST", "/api/items", {
+            "title": "数学作业", "kind": "todo", "category": "homework",
+            "priority": "medium", "deadline": deadline, "duration_min": 60,
+        })
+        self.assertEqual(s, 200)
+        s, res = self.req("GET", "/api/plan?date=" + today)
+        self.assertEqual(s, 200)
+        meta = res["plan"]["meta"]
+        self.assertTrue(meta.get("view_only"))
+        self.assertGreaterEqual(meta.get("candidates", 0), 1)
+        self.assertEqual(len(res["plan"]["entries"] or []), 0)
+
+    def test_future_day_can_be_planned(self):
+        # 打开未来某天也应能生成排程（不再只规划真实今天）
+        self._reset_plan()
+        future = (date.today() + timedelta(days=3)).isoformat()
+        s, res = self.req("POST", "/api/items", {
+            "title": "数学作业", "kind": "todo", "category": "homework",
+            "priority": "medium", "deadline": future, "duration_min": 60,
+        })
+        self.assertEqual(s, 200)
+        tid = res["todo"]["id"]
+
+        s, plan = self.req("POST", "/api/plan/ai", {"date": future})
+        self.assertEqual(s, 200)
+        self.assertEqual(plan["plan"]["date"], future)
+        entries0 = [(e["task_id"], e["start"], e["end"])
+                    for e in plan["plan"]["entries"]]
+        self.assertIn(tid, [x[0] for x in entries0])
+
+        s, back = self.req("GET", "/api/plan?date=" + future)
+        self.assertEqual(s, 200)
+        entries1 = [(e["task_id"], e["start"], e["end"])
+                    for e in back["plan"]["entries"]]
+        self.assertEqual(entries0, entries1)
+
+    def test_browse_without_plan_shows_zero_usage(self):
+        # 空方案的日子能量占用必须为 0（原来会偷偷算一版排程导致占用）
+        self._reset_plan()
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        s, res = self.req("POST", "/api/items", {
+            "title": "买牛奶", "kind": "todo", "category": "other",
+            "priority": "low", "duration_min": 30,
+        })
+        self.assertEqual(s, 200)
+        s, res = self.req("GET", "/api/plan?date=" + tomorrow)
+        self.assertEqual(s, 200)
+        plan = res["plan"]
+        self.assertTrue((plan["meta"] or {}).get("view_only"))
+        self.assertEqual(len(plan["entries"] or []), 0)
+        budget = plan["budget"] or {}
+        self.assertEqual(budget.get("planned_points"), 0)
+        self.assertEqual(budget.get("planned_ratio"), 0)
+
+    def test_plan_survives_day_navigation(self):
+        # 生成排程后翻到另一天再翻回：方案应原样保留
+        self._reset_plan()
+        today = date.today().isoformat()
+        s, res = self.req("POST", "/api/items", {
+            "title": "整理课程笔记", "kind": "todo", "category": "homework",
+            "priority": "medium", "duration_min": 60,
+        })
+        self.assertEqual(s, 200)
+        s, res = self.req("POST", "/api/plan/ai", {"date": today})
+        self.assertEqual(s, 200)
+        entries0 = [(e["task_id"], e["start"], e["end"])
+                    for e in res["plan"]["entries"]]
+        self.assertGreaterEqual(len(entries0), 1)
+
+        other = (date.today() + timedelta(days=1)).isoformat()
+        s, other_res = self.req("GET", "/api/plan?date=" + other)
+        self.assertEqual(s, 200)
+        self.assertEqual(len(other_res["plan"]["entries"] or []), 0)
+
+        s, back = self.req("GET", "/api/plan?date=" + today)
+        self.assertEqual(s, 200)
+        entries1 = [(e["task_id"], e["start"], e["end"])
+                    for e in back["plan"]["entries"]]
+        self.assertEqual(entries0, entries1)
+
+    def test_skip_binds_today_and_keeps_task_planable_later(self):
+        # 跳过只作用于当天；重新规划后当天不再出现，任务进入“明日优先”，
+        # 同时不再被 plan_offered_date 永久卡住，之后的日子恢复候选。
+        self._reset_plan()
+        today = date.today().isoformat()
+        s, res_a = self.req("POST", "/api/items", {
+            "title": "任务甲", "kind": "todo", "category": "homework",
+            "priority": "medium", "duration_min": 60,
+        })
+        s, res_b = self.req("POST", "/api/items", {
+            "title": "任务乙", "kind": "todo", "category": "homework",
+            "priority": "medium", "duration_min": 60,
+        })
+        self.assertEqual((s, s), (200, 200))
+        aid = res_a["todo"]["id"]
+        bid = res_b["todo"]["id"]
+
+        s, plan = self.req("POST", "/api/plan/ai", {"date": today})
+        self.assertEqual(s, 200)
+        placed = {e["task_id"] for e in plan["plan"]["entries"]}
+        self.assertIn(aid, placed)
+        self.assertIn(bid, placed)
+
+        s, skipped = self.req("POST", "/api/plan/skip", {
+            "date": today, "task_id": aid,
+        })
+        self.assertEqual(s, 200)
+
+        s, replan = self.req("POST", "/api/plan/ai", {"date": today})
+        self.assertEqual(s, 200)
+        ids = {e["task_id"] for e in replan["plan"]["entries"]}
+        self.assertNotIn(aid, ids)
+        self.assertIn(bid, ids)
+        tomorrow = replan["plan"]["tomorrow"] or []
+        self.assertTrue(any(
+            x.get("task_id") == aid and x.get("skipped") for x in tomorrow))
+
+        s, state = self.req("GET", "/api/state")
+        self.assertEqual(s, 200)
+        todo = next(
+            (t for t in (state.get("todo_items") or []) if t.get("id") == aid),
+            None)
+        self.assertIsNotNone(todo)
+        self.assertEqual(todo.get("plan_skipped_dates"), [today])
+        self.assertIn(todo.get("plan_offered_date"), (None, ""))
+
+    def test_suggest_returns_cross_day_items(self):
+        # 今日计划页的排程建议应覆盖未来日期，每条都带目标日期与时段
+        self._reset_plan()
+        today = date.today().isoformat()
+        deadline = (date.today() + timedelta(days=3)).isoformat()
+        s, res = self.req("POST", "/api/items", {
+            "title": "数学作业", "kind": "todo", "category": "homework",
+            "priority": "medium", "deadline": deadline, "duration_min": 60,
+        })
+        self.assertEqual(s, 200)
+        tid = res["todo"]["id"]
+        s, res = self.req("POST", "/api/plan/suggest", {})
+        self.assertEqual(s, 200)
+        items = res.get("items") or []
+        it = next((x for x in items if x.get("id") == tid), None)
+        self.assertIsNotNone(it)
+        self.assertTrue(it.get("date") and it.get("date") >= today)
+        self.assertTrue(it.get("time"))
+        self.assertTrue(it.get("end_time"))
+        self.assertIn("energy", res)
+        self.assertIn("slot_points", it)
+        # AI 不可用时走规则兜底：仍应补全概率/风险字段
+        self.assertTrue(0.0 <= it.get("probability", -1) <= 1.0)
+        self.assertIn("risk", it)
+        self.assertIn("risk_copy", it)
+
+    def test_far_deadline_not_suggested_by_rule_fallback(self):
+        # AI 不可用时规则兜底不应把截止还很远的任务提前摆到计划页
+        self._reset_plan()
+        deadline = (date.today() + timedelta(days=10)).isoformat()
+        s, res = self.req("POST", "/api/items", {
+            "title": "结课论文", "kind": "todo", "category": "homework",
+            "priority": "medium", "deadline": deadline, "duration_min": 60,
+        })
+        self.assertEqual(s, 200)
+        tid = res["todo"]["id"]
+        s, res = self.req("POST", "/api/plan/suggest", {})
+        self.assertEqual(s, 200)
+        self.assertEqual(res.get("method"), "rule")
+        self.assertNotIn(
+            tid, [x.get("id") for x in (res.get("items") or [])])
+        self.assertEqual(res.get("energy", {}).get("used_points"), 0)
+
+    def test_suggest_skip_today_then_adopt_another(self):
+        # 跳过某条建议后，今日不再提示该任务；采纳其它建议会写到它的目标日期
+        self._reset_plan()
+        today = date.today().isoformat()
+        dl_a = (date.today() + timedelta(days=1)).isoformat()
+        dl_b = (date.today() + timedelta(days=2)).isoformat()
+        s, res_a = self.req("POST", "/api/items", {
+            "title": "任务甲", "kind": "todo", "category": "homework",
+            "priority": "high", "deadline": dl_a, "duration_min": 60,
+        })
+        s, res_b = self.req("POST", "/api/items", {
+            "title": "任务乙", "kind": "todo", "category": "homework",
+            "priority": "high", "deadline": dl_b, "duration_min": 60,
+        })
+        self.assertEqual((s, s), (200, 200))
+        aid = res_a["todo"]["id"]
+        bid = res_b["todo"]["id"]
+
+        s, sug = self.req("POST", "/api/plan/suggest", {})
+        self.assertEqual(s, 200)
+        it_a = next((x for x in sug["items"] if x.get("id") == aid), None)
+        it_b = next((x for x in sug["items"] if x.get("id") == bid), None)
+        self.assertIsNotNone(it_a)
+        self.assertIsNotNone(it_b)
+
+        s, skipped = self.req("POST", "/api/plan/skip", {
+            "date": today, "task_id": aid,
+        })
+        self.assertEqual(s, 200)
+        s, sug2 = self.req("POST", "/api/plan/suggest", {})
+        self.assertEqual(s, 200)
+        ids2 = {x.get("id") for x in sug2["items"]}
+        self.assertNotIn(aid, ids2)
+        self.assertIn(bid, ids2)
+
+        s, patched = self.req("PATCH", "/api/todos/" + bid, {
+            "kind": "schedule",
+            "date": it_b["date"],
+            "time": it_b["time"],
+            "end_time": it_b["end_time"],
+        })
+        self.assertEqual(s, 200)
+        s, state = self.req("GET", "/api/state")
+        self.assertEqual(s, 200)
+        todo = next(
+            (t for t in (state.get("todos") or []) if t.get("id") == bid), None)
+        self.assertIsNotNone(todo)
+        self.assertEqual(todo.get("kind"), "schedule")
+        self.assertEqual(todo.get("date"), it_b["date"])
+        self.assertEqual(todo.get("time"), it_b["time"])
+
+    def test_replan_include_skipped_today(self):
+        # 跳过只抑制自动规划；点「重新规划」（include_skipped=true）时
+        # 今天跳过的任务可以重新参与规划
+        self._reset_plan()
+        today = date.today().isoformat()
+        dl = (date.today() + timedelta(days=1)).isoformat()
+        s, res = self.req("POST", "/api/items", {
+            "title": "临时加的任务", "kind": "todo", "category": "homework",
+            "priority": "high", "deadline": dl, "duration_min": 60,
+        })
+        self.assertEqual(s, 200)
+        tid = res["todo"]["id"]
+
+        s, sug = self.req("POST", "/api/plan/suggest", {})
+        self.assertIn(tid, [x.get("id") for x in sug["items"]])
+
+        s, skipped = self.req("POST", "/api/plan/skip", {
+            "date": today, "task_id": tid,
+        })
+        self.assertEqual(s, 200)
+        s, sug2 = self.req("POST", "/api/plan/suggest", {})
+        self.assertNotIn(tid, [x.get("id") for x in sug2["items"]])
+
+        s, sug3 = self.req("POST", "/api/plan/suggest",
+                           {"include_skipped": True})
+        self.assertIn(tid, [x.get("id") for x in sug3["items"]])
+
+    def test_adopt_uses_displayed_future_deadline_slot(self):
+        # 未来截止的任务也会被提前安排；采纳时应写入页面展示的那个时段，
+        # 而不是重新计算时因引擎口径不同而落空。
+        self._reset_plan()
+        today = date.today().isoformat()
+        deadline = (date.today() + timedelta(days=3)).isoformat()
+        s, res = self.req("POST", "/api/items", {
+            "title": "大创中期报告", "kind": "todo", "category": "homework",
+            "priority": "high", "deadline": deadline, "energy_cost": 3,
+            "duration_min": 90,
+        })
+        self.assertEqual(s, 200)
+        tid = res["todo"]["id"]
+
+        s, plan = self.req("POST", "/api/plan/ai", {"date": today})
+        self.assertEqual(s, 200)
+        entry = next(
+            (e for e in plan["plan"]["entries"] if e["task_id"] == tid), None)
+        self.assertIsNotNone(entry)
+
+        s, applied = self.req("POST", "/api/plan/apply", {
+            "date": today, "placements": [tid],
+        })
+        self.assertEqual(s, 200)
+        self.assertEqual(applied.get("placed"), 1)
+
+        s, state = self.req("GET", "/api/state")
+        self.assertEqual(s, 200)
+        todo = next(
+            (t for t in (state.get("todos") or []) if t.get("id") == tid),
+            None)
+        self.assertIsNotNone(todo)
+        self.assertEqual(todo.get("date"), today)
+        self.assertEqual(todo.get("time"), entry["start"])
+        self.assertEqual(todo.get("end_time"), entry["end"])
+
     def test_full_flow(self):
         tomorrow = (date.today() + timedelta(days=1)).isoformat()
 
@@ -96,7 +389,7 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(res["todo"]["deadline_type"], "soft")
         self.assertEqual(res["todo"]["ddl_float_days"], 2)
 
-        # 规划只锚定今天：加一条无截止任务作为今天的候选
+        # 加一条无截止任务作为今天的候选，保证今天有排程
         s, res = self.req("POST", "/api/items", {
             "title": "整理课程笔记", "kind": "todo", "category": "homework",
             "priority": "medium", "duration_min": 60,
