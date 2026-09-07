@@ -30,3 +30,7 @@ dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 浏览器自动化临时用户目录：可能包含登录、Cookie 和浏览记录
+materials/_edgetmp/
+materials/edge-profile/

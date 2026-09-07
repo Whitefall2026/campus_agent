@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="qh" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#232f6b"/>
+      <stop offset="0.5" stop-color="#3a4bc9"/>
+      <stop offset="1" stop-color="#6a48d8"/>
+    </linearGradient>
+    <linearGradient id="qa" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+    <marker id="qar" orient="auto-start-reverse" markerWidth="7" markerHeight="7" refX="5.2" refY="3.5" viewBox="0 0 7 7">
+      <path d="M0.4 0.6 L6 3.5 L0.4 6.4 Z" fill="#aab4e8"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="960" height="540" fill="#eef1f8"/>
+
+  <!-- ===== 头部 ===== -->
+  <rect x="0" y="0" width="960" height="64" fill="url(#qh)"/>
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <text x="36" y="31" font-size="26" font-weight="800" fill="#ffffff">RUC Agent</text>
+    <text x="36" y="53" font-size="13" fill="#d3dafc">说一句 · 转一条，日程自己长出来 —— 校园日程智能助手</text>
+    <rect x="592" y="16" width="332" height="32" rx="16" fill="rgba(255,255,255,0.15)"/>
+    <text x="758" y="37" font-size="13.5" font-weight="700" fill="#ffffff" text-anchor="middle">伴学计划 · 贺奕锴 / 孙若瑜 / 冯冠瑀</text>
+  </g>
+
+  <!-- ===== 左列：问题 / 方案 ===== -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="72" width="340" height="98" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+    <rect x="36" y="72" width="6" height="98" rx="3" fill="#f59e0b"/>
+    <text x="56" y="94" font-size="15" font-weight="700" fill="#1d2433">问题是什么</text>
+    <text x="56" y="120" font-size="12" fill="#4a5468">· 安排散落在微信群、口头与转发里，转眼就忘</text>
+    <text x="56" y="142" font-size="12" fill="#4a5468">· 撞车、截止靠肉眼发现，往往已来不及</text>
+    <text x="56" y="164" font-size="12" fill="#4a5468">· 排期不考虑精力，硬塞导致熬夜拖延</text>
+    <rect x="36" y="182" width="340" height="140" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+    <rect x="36" y="182" width="6" height="140" rx="3" fill="#12a150"/>
+    <text x="56" y="206" font-size="15" font-weight="700" fill="#1d2433">我们的解决方案</text>
+    <text x="56" y="232" font-size="12" fill="#4a5468">· 对话 / 微信自动提取 → 「待采纳」</text>
+    <text x="70" y="252" font-size="12" fill="#4a5468">确认后才写入日程 / 待办</text>
+    <text x="56" y="276" font-size="12" fill="#4a5468">· 画像 + 长期记忆 + 24h 精力曲线</text>
+    <text x="70" y="296" font-size="12" fill="#4a5468">→ 选择性排期与风险推演</text>
+    <text x="56" y="320" font-size="12" fill="#4a5468">· 数据全部只存本机，可随时重置</text>
+  </g>
+
+  <!-- ===== 主视觉 ===== -->
+  <g>
+    <rect x="388" y="72" width="536" height="250" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+    <image x="456" y="72" width="400" height="250" href="./shot_input.png"/>
+    <rect x="406" y="82" width="210" height="28" rx="14" fill="url(#qa)"/>
+    <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+      <text x="511" y="101" font-size="12.5" font-weight="700" fill="#ffffff" text-anchor="middle">对话页真实运行 · 本机截图</text>
+      <!-- 底部运行说明条 -->
+      <rect x="396" y="286" width="520" height="28" rx="8" fill="rgba(15,21,38,0.72)"/>
+      <text x="656" y="305" font-size="12" font-weight="600" fill="#ffffff" text-anchor="middle">python server.py 一行启动 · 代码 github.com/Whitefall2026/campus_agent</text>
+    </g>
+  </g>
+
+  <!-- ===== 流程标题 + 六节点 ===== -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <text x="36" y="336" font-size="12.5" font-weight="700" fill="#66708a">核心体验 / 工作流程</text>
+    <g>
+      <rect x="36" y="346" width="140" height="48" rx="10" fill="#ffffff" stroke="#c9d2f5"/>
+      <text x="106" y="376" font-size="13" font-weight="700" fill="#4f6ef7" text-anchor="middle">① 输入 · 对话/微信</text>
+      <rect x="185" y="346" width="140" height="48" rx="10" fill="#ffffff" stroke="#c9d2f5"/>
+      <text x="255" y="376" font-size="13" font-weight="700" fill="#4f6ef7" text-anchor="middle">② 提取 · 规则+AI</text>
+      <rect x="334" y="346" width="140" height="48" rx="10" fill="#ffffff" stroke="#c9d2f5"/>
+      <text x="404" y="376" font-size="13" font-weight="700" fill="#7b5cf0" text-anchor="middle">③ 待采纳 · 确认入库</text>
+      <rect x="483" y="346" width="140" height="48" rx="10" fill="#ffffff" stroke="#c9d2f5"/>
+      <text x="553" y="376" font-size="13" font-weight="700" fill="#4f6ef7" text-anchor="middle">④ 记忆 · 画像分层</text>
+      <rect x="632" y="346" width="140" height="48" rx="10" fill="#ffffff" stroke="#c9d2f5"/>
+      <text x="702" y="376" font-size="13" font-weight="700" fill="#4f6ef7" text-anchor="middle">⑤ 排期 · 能量校验</text>
+      <rect x="781" y="346" width="140" height="48" rx="10" fill="#eef2ff" stroke="#c9d2f5"/>
+      <text x="851" y="376" font-size="13" font-weight="700" fill="#3d55d9" text-anchor="middle">⑥ 反馈 · 越用越懂你</text>
+      <path d="M179 370 L182 370" stroke="#aab4e8" stroke-width="2.5" fill="none" marker-end="url(#qar)"/>
+      <path d="M328 370 L331 370" stroke="#aab4e8" stroke-width="2.5" fill="none" marker-end="url(#qar)"/>
+      <path d="M477 370 L480 370" stroke="#aab4e8" stroke-width="2.5" fill="none" marker-end="url(#qar)"/>
+      <path d="M626 370 L629 370" stroke="#aab4e8" stroke-width="2.5" fill="none" marker-end="url(#qar)"/>
+      <path d="M775 370 L778 370" stroke="#aab4e8" stroke-width="2.5" fill="none" marker-end="url(#qar)"/>
+    </g>
+  </g>
+
+  <!-- ===== 本次完成 ===== -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="404" width="888" height="54" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+    <text x="52" y="424" font-size="13" font-weight="700" fill="#1d2433">本次完成（如实）</text>
+    <text x="52" y="440" font-size="11.5" fill="#4a5468">纯 Python 标准库 + 原生前端 · 微信 4.x 提取 · AI 网关 / 画像记忆 / 能量排期</text>
+    <text x="52" y="452" font-size="11.5" fill="#4a5468">挡箭牌全链路可用 · AI 失败自动规则兜底 · 65 项单元与端到端测试通过</text>
+  </g>
+
+  <!-- ===== 项目亮点 ===== -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="464" width="888" height="68" rx="12" fill="#1d2433"/>
+    <text x="52" y="484" font-size="13" font-weight="700" fill="#ffffff">项目亮点 × 3</text>
+    <text x="52" y="502" fill="#ffffff"><tspan font-size="12" font-weight="700" fill="#ffffff">从"收集信息"到"替用户做取舍"</tspan><tspan dx="7" font-size="11.5" fill="#dbe0ff">—— 不是再多一张待办清单，而是结合截止日期、任务负荷和当下精力，只推荐今天真正值得推进的一两件事。</tspan></text>
+    <text x="52" y="518" fill="#ffffff"><tspan font-size="12" font-weight="700" fill="#ffffff">用户状态画像，AI 会逐渐更懂你</tspan><tspan dx="7" font-size="11.5" fill="#dbe0ff">—— 把外部压力、并行事务、精力状态和完成反馈串成长期记忆，让建议会随处境变化，而不是每次从零开始。</tspan></text>
+    <text x="52" y="534" fill="#ffffff"><tspan font-size="12" font-weight="700" fill="#ffffff">把效率还给自由时间</tspan><tspan dx="7" font-size="11.5" fill="#dbe0ff">—— 产品不以塞满日程为目标；通过降低启动焦虑、把事情安排到合适时段，让用户高效完成必要事项后，拥有真正"不被安排的时间"。</tspan></text>
+  </g>
+</svg>

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="b6" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="960" height="540" fill="#eef1f8"/>
+
+  <!-- 页头 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="30" width="196" height="34" rx="17" fill="#e3e8fd"/>
+    <text x="134" y="53" font-size="15" font-weight="700" fill="#4f6ef7" text-anchor="middle">真实演示 2 · 截图</text>
+    <text x="36" y="98" font-size="32" font-weight="800" fill="#1d2433">计划页：AI 选择性排期 + 能量引擎校验</text>
+    <text x="36" y="126" font-size="15" fill="#66708a">只挑「现在值得做」的待办 · 给完成概率与风险 · 采纳后才写入对应日期</text>
+  </g>
+
+  <!-- 左侧截图窗 -->
+  <g>
+    <rect x="36" y="152" width="542" height="372" rx="14" fill="#ffffff" stroke="#d7dcea"/>
+    <rect x="36" y="152" width="542" height="34" rx="14" fill="#f3f5fb"/>
+    <circle cx="58" cy="169" r="5" fill="#e5484d"/>
+    <circle cx="73" cy="169" r="5" fill="#f5a524"/>
+    <circle cx="88" cy="169" r="5" fill="#12a150"/>
+    <rect x="106" y="158" width="280" height="22" rx="11" fill="#ffffff" stroke="#e4e8f1"/>
+    <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+      <text x="246" y="174" font-size="11.5" fill="#66708a" text-anchor="middle">127.0.0.1:8000 · 计划页</text>
+    </g>
+    <image x="44" y="192" width="526" height="326" href="./shot_planner.png"/>
+    <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+      <rect x="52" y="204" width="150" height="30" rx="15" fill="#ffffff" stroke="#4f6ef7" stroke-width="2"/>
+      <text x="127" y="224" font-size="12.5" font-weight="700" fill="#3d55d9" text-anchor="middle">排程建议 · 可一键采纳</text>
+    </g>
+  </g>
+
+  <!-- 右侧要点 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="602" y="152" width="322" height="330" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <!-- 项1 -->
+    <g>
+      <circle cx="628" cy="192" r="13" fill="#4f6ef7"/>
+      <text x="628" y="197" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+      <text x="650" y="197" font-size="15" font-weight="700" fill="#1d2433">今日能量环 + 精力曲线</text>
+      <text x="622" y="224" font-size="13" fill="#4a5468">07–23 点逐小时；完成反馈按 EMA 自动校准</text>
+    </g>
+    <!-- 项2 -->
+    <g>
+      <circle cx="628" cy="262" r="13" fill="#4f6ef7"/>
+      <text x="628" y="267" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+      <text x="650" y="267" font-size="15" font-weight="700" fill="#1d2433">选择性排期</text>
+      <text x="622" y="294" font-size="13" fill="#4a5468">远的 DDL 不提前刷屏，跳过可随时召回</text>
+    </g>
+    <!-- 项3 -->
+    <g>
+      <circle cx="628" cy="332" r="13" fill="#f59e0b"/>
+      <text x="628" y="337" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+      <text x="650" y="337" font-size="15" font-weight="700" fill="#1d2433">完成概率推演</text>
+      <text x="622" y="364" font-size="13" fill="#4a5468">低概率给风险提示与拆分 / 降标建议</text>
+    </g>
+    <!-- 项4 -->
+    <g>
+      <circle cx="628" cy="402" r="13" fill="#12a150"/>
+      <text x="628" y="407" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+      <text x="650" y="407" font-size="15" font-weight="700" fill="#1d2433">引擎只做校验与兜底</text>
+      <text x="622" y="434" font-size="13" fill="#4a5468">排期不落过去；超载时软线 DDL 自动顺延</text>
+    </g>
+    <rect x="622" y="452" width="282" height="26" rx="8" fill="#eef2ff"/>
+    <text x="763" y="470" font-size="12.5" font-weight="600" fill="#3d55d9" text-anchor="middle">被拒绝的提议带回原因，二次修正再校验</text>
+  </g>
+
+  <!-- 底部能力条 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="602" y="502" width="322" height="28" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <circle cx="622" cy="516" r="6" fill="#4f6ef7"/>
+    <text x="634" y="521" font-size="13" fill="#1d2433">拖拽即改排期</text>
+    <circle cx="730" cy="516" r="6" fill="#4f6ef7"/>
+    <text x="742" y="521" font-size="13" fill="#1d2433">冲突高亮提醒</text>
+    <text x="896" y="521" font-size="12" fill="#8a94a8" text-anchor="end">翻页不重复提议</text>
+  </g>
+</svg>

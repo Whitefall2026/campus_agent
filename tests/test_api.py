@@ -20,11 +20,13 @@ from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 
 from app.paths import DATA_DIR
+from app.ai import gateway as ai_gateway
 from app.web.handlers import Handler
 
 TOUCHED = ["todos.json", "planner_profile.json", "planner_events.json",
            "ai_config.json", "user_profile.json", "user_evidence.json",
-           "user_memory.json", "user_state_history.json", "chat_thread.json"]
+           "user_memory.json", "user_state_history.json", "chat_thread.json",
+           "ai_pending.json", "ai_seen.json"]
 
 
 class TestApiIntegration(unittest.TestCase):
@@ -76,6 +78,37 @@ class TestApiIntegration(unittest.TestCase):
         """清空待办并重置今日排程缓存，保证每个用例从确定状态开始。"""
         self.req("POST", "/api/clear", {"scope": "all"})
         self.req("POST", "/api/plan/ai", {"date": date.today().isoformat()})
+
+    def test_accept_official_push_directly_to_todo(self):
+        self._reset_plan()
+        item_id = "official01"
+        ai_gateway.add_pending({
+            "id": item_id,
+            "chat_username": "gh_jobs",
+            "chat_display": "人大就业",
+            "sender": "人大就业",
+            "seq": 9001,
+            "raw": "秋招报名通知\n请于9月10日前提交报名表",
+            "fields": {
+                "title": "秋招报名通知",
+                "kind": "todo",
+                "category": "deadline",
+                "priority": "medium",
+                "deadline": "%04d-09-10" % date.today().year,
+            },
+            "method": "official-rule",
+            "source": "wechat_official",
+            "official_url": "https://example.com/apply",
+            "status": "pending",
+        })
+        status, res = self.req(
+            "POST", "/api/ai/pending/%s/accept" % item_id, {"kind": "todo"}
+        )
+        self.assertEqual(status, 200)
+        todo = next(t for t in res["state"]["todos"] if t.get("wx_seq") == 9001)
+        self.assertEqual(todo["kind"], "todo")
+        self.assertEqual(todo["source"], "wechat_official")
+        self.assertEqual(todo["title"], "秋招报名通知")
 
     def test_first_visit_reports_planable_candidates(self):
         # 只有未来截止的未排期待办时，首访计划页也应看到候选并触发自动规划

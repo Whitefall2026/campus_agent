@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="b7" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="960" height="540" fill="#eef1f8"/>
+
+  <!-- 页头 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="30" width="196" height="34" rx="17" fill="#e3e8fd"/>
+    <text x="134" y="53" font-size="15" font-weight="700" fill="#4f6ef7" text-anchor="middle">真实演示 3 · 截图</text>
+    <text x="36" y="98" font-size="31" font-weight="800" fill="#1d2433">不打开 App，日程自己出现；被硬塞时帮你体面说不</text>
+    <text x="36" y="126" font-size="15" fill="#66708a">微信 4.x 自动提取 · 智能挡箭牌 —— 同一份数据、同一条时间轴</text>
+  </g>
+
+  <!-- 左卡：微信自动提取 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="150" width="470" height="338" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <rect x="36" y="150" width="470" height="5" rx="2.5" fill="#12a150"/>
+    <circle cx="64" cy="184" r="15" fill="#e5f6ec"/>
+    <text x="64" y="190" font-size="14" font-weight="700" fill="#0b7a3d" text-anchor="middle">微</text>
+    <text x="90" y="190" font-size="17" font-weight="700" fill="#1d2433">微信自动提取</text>
+    <rect x="330" y="173" width="150" height="24" rx="12" fill="#e5f6ec"/>
+    <text x="405" y="189" font-size="11.5" font-weight="700" fill="#0b7a3d" text-anchor="middle">实时监听 · 已连接</text>
+    <text x="56" y="222" font-size="13.5" fill="#4a5468">· 转发到「文件传输助手」，或指定会话 / 监听全部会话</text>
+    <text x="56" y="246" font-size="13.5" fill="#4a5468">· 消息 ≥10 字且含时间 / 地点 / 安排线索才进入识别</text>
+    <text x="56" y="270" font-size="13.5" fill="#4a5468">· 加入监听时回读最近消息补档；重复内容按序号去重</text>
+    <!-- 日程截图 -->
+    <rect x="56" y="286" width="430" height="190" rx="10" fill="#ffffff" stroke="#d7dcea"/>
+    <rect x="56" y="286" width="430" height="24" rx="10" fill="#f3f5fb"/>
+    <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+      <text x="72" y="303" font-size="11.5" fill="#66708a">日程页 · 消息直接落进时间轴</text>
+    </g>
+    <image x="62" y="314" width="418" height="156" href="./shot_schedule.png"/>
+    <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+      <rect x="70" y="326" width="160" height="24" rx="12" fill="#ffffff" stroke="#12a150" stroke-width="1.5"/>
+      <text x="150" y="342" font-size="11.5" font-weight="700" fill="#0b7a3d" text-anchor="middle">微信来源 · 自动入库</text>
+    </g>
+  </g>
+
+  <!-- 右卡：智能挡箭牌 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="530" y="150" width="394" height="338" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <rect x="530" y="150" width="394" height="5" rx="2.5" fill="#7b5cf0"/>
+    <circle cx="558" cy="184" r="15" fill="#f1e8fd"/>
+    <text x="558" y="190" font-size="14" font-weight="700" fill="#6d28d9" text-anchor="middle">盾</text>
+    <text x="584" y="190" font-size="17" font-weight="700" fill="#1d2433">智能挡箭牌</text>
+    <text x="550" y="222" font-size="13.5" fill="#4a5468">粘贴外部硬塞的任务（团建 / 聚餐 / 临时活）</text>
+    <text x="550" y="246" font-size="13.5" fill="#4a5468">→ 评估当前负载 → 生成三种回应话术：</text>
+    <text x="550" y="270" font-size="13.5" fill="#4a5468">「婉拒 / 待定 / 接单」，一键复制；语气冷静、不制造焦虑</text>
+    <!-- 话术示例 -->
+    <rect x="550" y="286" width="354" height="134" rx="10" fill="#f7f4ff" stroke="#e6dcfa"/>
+    <text x="566" y="308" font-size="12.5" font-weight="700" fill="#5b3fd4">外部通知：</text>
+    <text x="566" y="328" font-size="12.5" fill="#4a5468">「周四晚部门聚餐，很重要，一定来啊！」</text>
+    <line x1="566" y1="342" x2="888" y2="342" stroke="#e6dcfa"/>
+    <text x="566" y="362" font-size="12.5" font-weight="700" fill="#5b3fd4">婉拒话术：</text>
+    <text x="566" y="382" font-size="12.5" fill="#4a5468">「这周任务真的排满了，怕赶不完反而拖后腿；</text>
+    <text x="566" y="402" font-size="12.5" fill="#4a5468">这次先请假，下次一定补上。」</text>
+    <rect x="550" y="430" width="354" height="30" rx="8" fill="#f1e8fd"/>
+    <text x="727" y="450" font-size="12" font-weight="600" fill="#6d28d9" text-anchor="middle">负载高时建议：先补完手上的，再答应别人</text>
+    <text x="550" y="478" font-size="12" fill="#8a94a8">想说「不」时有底气，想接下时也只是一键的事</text>
+  </g>
+
+  <!-- 底部原则条 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="502" width="888" height="28" rx="14" fill="#1d2433"/>
+    <text x="480" y="521" font-size="13.5" font-weight="600" fill="#ffffff" text-anchor="middle">闲聊消息只进活动日志、绝不污染日程——AI 调用前先预筛，省钱也保护隐私</text>
+  </g>
+</svg>

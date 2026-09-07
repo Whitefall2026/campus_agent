@@ -1,0 +1,85 @@
+﻿python : .................................................................
+At line:1 char:129
++ ... ding]::new($false); python -m unittest discover -s tests 2>&1 | Out-F ...
++                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (.................................:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+----------------------------------------------------------------------
+Ran 65 tests in 0.720s
+
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/apply HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/state HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/plan?date=2026-09-07 HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/chat HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/ai/profile HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/chat/reset HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/ai/profile HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/suggest HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/plan?date=2026-09-06 HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/energy HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/shield HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/decompose HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "PATCH /api/todos/07694f7346 HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/feedback HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/move HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/state HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/plan?date=2026-09-09 HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/plan?date=2026-09-07 HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/plan?date=2026-09-06 HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/suggest HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/skip HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/suggest HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/suggest HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/skip HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/state HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/suggest HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/clear HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/ai HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+OK
+[06/Sep/2026 10:32:10] "POST /api/items HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/suggest HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/skip HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "POST /api/plan/suggest HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "PATCH /api/todos/3aea9a92c9 HTTP/1.1" 200 -
+[06/Sep/2026 10:32:10] "GET /api/state HTTP/1.1" 200 -
