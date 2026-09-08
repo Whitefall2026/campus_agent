@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#eef1f8"/>
+  <defs>
+    <linearGradient id="h4" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 页头 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="30" width="176" height="34" rx="17" fill="#e3e8fd"/>
+    <text x="124" y="53" font-size="15" font-weight="700" fill="#4f6ef7" text-anchor="middle">工作逻辑</text>
+    <text x="36" y="98" font-size="32" font-weight="800" fill="#1d2433">六步闭环：提取 → 确认 → 分层记忆 → 规划 → 反馈</text>
+    <text x="36" y="126" font-size="15" fill="#66708a">规则与 AI 双引擎 · 四层概念互不污染 · 能量引擎只做校验，不越权决策</text>
+  </g>
+
+  <!-- 行1：输入 → 提取 → 待采纳 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <g>
+      <rect x="36" y="152" width="270" height="152" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+      <circle cx="62" cy="180" r="15" fill="#4f6ef7"/>
+      <text x="62" y="186" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+      <text x="86" y="186" font-size="18" font-weight="700" fill="#1d2433">输入</text>
+      <text x="56" y="216" font-size="13.5" fill="#4a5468">对话页直接说安排；</text>
+      <text x="56" y="238" font-size="13.5" fill="#4a5468">微信 4.x 实时监听：文件传输</text>
+      <text x="56" y="260" font-size="13.5" fill="#4a5468">助手 / 指定会话 / 全部会话</text>
+      <text x="56" y="288" font-size="12" fill="#8a94a8">接入口：说 · 转发 · 粘贴</text>
+    </g>
+    <g>
+      <rect x="345" y="152" width="270" height="152" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+      <circle cx="371" cy="180" r="15" fill="#4f6ef7"/>
+      <text x="371" y="186" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+      <text x="395" y="186" font-size="18" font-weight="700" fill="#1d2433">提取</text>
+      <text x="365" y="216" font-size="13.5" fill="#4a5468">规则预筛：闲聊直接过滤，</text>
+      <text x="365" y="238" font-size="13.5" fill="#4a5468">省钱也保护隐私；</text>
+      <text x="365" y="260" font-size="13.5" fill="#4a5468">AI 提取结构化日程，</text>
+      <text x="365" y="282" font-size="13.5" fill="#4a5468">失败自动规则兜底</text>
+      <text x="365" y="288" font-size="12" fill="#8a94a8"/>
+    </g>
+    <g>
+      <rect x="654" y="152" width="270" height="152" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+      <circle cx="680" cy="180" r="15" fill="#7b5cf0"/>
+      <text x="680" y="186" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+      <text x="704" y="186" font-size="18" font-weight="700" fill="#1d2433">待采纳</text>
+      <text x="674" y="216" font-size="13.5" fill="#4a5468">识别结果以「待采纳」卡片进</text>
+      <text x="674" y="238" font-size="13.5" fill="#4a5468">入对话流，可查看来源原文；</text>
+      <text x="674" y="260" font-size="13.5" fill="#4a5468">采纳到日程 / 待办，或忽略——</text>
+      <text x="674" y="282" font-size="13.5" fill="#4a5468">确认之后才写入</text>
+      <text x="674" y="288" font-size="12" fill="#8a94a8"/>
+    </g>
+    <!-- 行1箭头 -->
+    <path d="M316 228 H330" stroke="#aab4e8" stroke-width="3" fill="none"/>
+    <path d="M330 221 L340 228 L330 235 Z" fill="#aab4e8"/>
+    <path d="M625 228 H639" stroke="#aab4e8" stroke-width="3" fill="none"/>
+    <path d="M639 221 L649 228 L639 235 Z" fill="#aab4e8"/>
+  </g>
+
+  <!-- 行间竖连通 -->
+  <g>
+    <circle cx="480" cy="314" r="2.5" fill="#aab4e8"/>
+    <circle cx="480" cy="326" r="2.5" fill="#aab4e8"/>
+    <path d="M480 318 v10" stroke="#aab4e8" stroke-width="3"/>
+    <path d="M473 330 L480 342 L487 330 Z" fill="#aab4e8"/>
+  </g>
+
+  <!-- 行2：分层存储 → 规划 → 反馈 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <g>
+      <rect x="36" y="352" width="270" height="152" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+      <circle cx="62" cy="380" r="15" fill="#4f6ef7"/>
+      <text x="62" y="386" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+      <text x="86" y="386" font-size="18" font-weight="700" fill="#1d2433">分层记忆</text>
+      <text x="56" y="416" font-size="13.5" fill="#4a5468">结构化事实（日程/课程）为锚；</text>
+      <text x="56" y="438" font-size="13.5" fill="#4a5468">动态画像管「你现在怎么样」</text>
+      <text x="56" y="460" font-size="13.5" fill="#4a5468">（精力/负载/压力/处境）；</text>
+      <text x="56" y="482" font-size="13.5" fill="#4a5468">长期记忆只存偏好与性格</text>
+    </g>
+    <g>
+      <rect x="345" y="352" width="270" height="152" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+      <circle cx="371" cy="380" r="15" fill="#4f6ef7"/>
+      <text x="371" y="386" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+      <text x="395" y="386" font-size="18" font-weight="700" fill="#1d2433">规划</text>
+      <text x="365" y="416" font-size="13.5" fill="#4a5468">AI 结合画像与精力曲线，只挑</text>
+      <text x="365" y="438" font-size="13.5" fill="#4a5468">「现在值得做」的待办提议排期；</text>
+      <text x="365" y="460" font-size="13.5" fill="#4a5468">能量引擎校验空闲与硬软线，</text>
+      <text x="365" y="482" font-size="13.5" fill="#4a5468">给出完成概率与风险建议</text>
+    </g>
+    <g>
+      <rect x="654" y="352" width="270" height="152" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+      <circle cx="680" cy="380" r="15" fill="#7b5cf0"/>
+      <text x="704" y="386" font-size="18" font-weight="700" fill="#1d2433">反馈校准</text>
+      <text x="674" y="416" font-size="13.5" fill="#4a5468">完成待办后点「轻松 / 正常 /</text>
+      <text x="674" y="438" font-size="13.5" fill="#4a5468">吃力」，精力曲线按指数移动</text>
+      <text x="674" y="460" font-size="13.5" fill="#4a5468">平均微调；排期与风险推演</text>
+      <text x="674" y="482" font-size="13.5" fill="#4a5468">越用越贴合你的真实状态</text>
+    </g>
+    <!-- 行2箭头 -->
+    <path d="M316 428 H330" stroke="#aab4e8" stroke-width="3" fill="none"/>
+    <path d="M330 421 L340 428 L330 435 Z" fill="#aab4e8"/>
+    <path d="M625 428 H639" stroke="#aab4e8" stroke-width="3" fill="none"/>
+    <path d="M639 421 L649 428 L639 435 Z" fill="#aab4e8"/>
+  </g>
+
+  <!-- 底部能力标签 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="518" width="0" height="0" fill="none"/>
+    <rect x="36" y="516" width="196" height="0" fill="none"/>
+    <g>
+      <rect x="36" y="516" width="178" height="24" rx="12" fill="#e3e8fd"/>
+      <text x="125" y="532" font-size="12.5" font-weight="700" fill="#3d55d9" text-anchor="middle">冲突 / 超载红色提醒</text>
+    </g>
+    <g>
+      <rect x="226" y="516" width="150" height="24" rx="12" fill="#e3e8fd"/>
+      <text x="301" y="532" font-size="12.5" font-weight="700" fill="#3d55d9" text-anchor="middle">智能挡箭牌话术</text>
+    </g>
+    <g>
+      <rect x="388" y="516" width="184" height="24" rx="12" fill="#e3e8fd"/>
+      <text x="480" y="532" font-size="12.5" font-weight="700" fill="#3d55d9" text-anchor="middle">硬线不延 · 软线自动顺延</text>
+    </g>
+    <g>
+      <rect x="584" y="516" width="196" height="24" rx="12" fill="#d9f2e3"/>
+      <text x="682" y="532" font-size="12.5" font-weight="700" fill="#0b7a3d" text-anchor="middle">数据与 Key 只存本机</text>
+    </g>
+    <text x="812" y="532" font-size="13" font-weight="600" fill="#66708a">不联网也全功能</text>
+  </g>
+</svg>

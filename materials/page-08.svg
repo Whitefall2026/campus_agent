@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="b8" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="960" height="540" fill="#eef1f8"/>
+
+  <!-- 页头 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="30" width="176" height="34" rx="17" fill="#e3e8fd"/>
+    <text x="124" y="53" font-size="15" font-weight="700" fill="#4f6ef7" text-anchor="middle">完成度与亮点</text>
+    <text x="36" y="98" font-size="32" font-weight="800" fill="#1d2433">从零到全链路可用：这四天我们做了什么</text>
+    <text x="36" y="126" font-size="15" fill="#66708a">诚实盘点：哪些完成、边界在哪、下一步去哪</text>
+  </g>
+
+  <!-- 左卡：完成度 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="148" width="500" height="292" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <text x="56" y="182" font-size="17" font-weight="700" fill="#1d2433">本次完成（全部可复现）</text>
+    <text x="56" y="216" font-size="14" fill="#3d4048">✓ python server.py 一行启动：纯标准库 + 原生前端，零安装</text>
+    <text x="56" y="244" font-size="14" fill="#3d4048">✓ 对话提取 / 微信 4.x 监听 / AI 网关 / 画像与长期记忆 /</text>
+    <text x="76" y="268" font-size="14" fill="#3d4048">能量排期 / 挡箭牌全链路跑通，AI 失败自动回退规则</text>
+    <text x="56" y="296" font-size="14" fill="#3d4048">✓ 65 项单元 + 真实 HTTP 端到端测试全部通过</text>
+    <text x="56" y="324" font-size="14" fill="#3d4048">✓ 数据与 API Key 只存本机 data/，可随时清空重置</text>
+    <rect x="56" y="344" width="460" height="84" rx="10" fill="#fdf3e2"/>
+    <text x="72" y="368" font-size="13" font-weight="700" fill="#c07f14">诚实边界</text>
+    <text x="72" y="390" font-size="12.5" fill="#8a6a2a">规则引擎擅长「带明确时间地点」的典型说法；复杂口语、</text>
+    <text x="72" y="408" font-size="12.5" fill="#8a6a2a">群公告多行转发依赖可选 AI 分析——两条路都覆盖。</text>
+    <text x="72" y="424" font-size="12" fill="#8a6a2a">微信能力基于开源 wechatauto-replica（Apache-2.0），仅 Windows 桌面端。</text>
+  </g>
+
+  <!-- 右卡：亮点 × 3 + 下一步 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="556" y="148" width="368" height="292" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <rect x="556" y="148" width="368" height="5" rx="2.5" fill="url(#b8)"/>
+    <text x="576" y="182" font-size="17" font-weight="700" fill="#1d2433">项目亮点 × 3</text>
+    <!-- 亮点1 -->
+    <circle cx="590" cy="212" r="12" fill="#4f6ef7"/>
+    <text x="590" y="217" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+    <text x="610" y="217" font-size="14.5" font-weight="700" fill="#1d2433">先确认、再入库，决定权在你</text>
+    <!-- 亮点2 -->
+    <circle cx="590" cy="256" r="12" fill="#7b5cf0"/>
+    <text x="590" y="261" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+    <text x="610" y="261" font-size="14.5" font-weight="700" fill="#1d2433">规则 + AI 双引擎：无 Key 全功能</text>
+    <!-- 亮点3 -->
+    <circle cx="590" cy="300" r="12" fill="#12a150"/>
+    <text x="590" y="305" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+    <text x="610" y="305" font-size="14.5" font-weight="700" fill="#1d2433">画像 · 记忆 · 精力闭环，越用越懂你</text>
+    <rect x="576" y="326" width="328" height="94" rx="10" fill="#eef2ff"/>
+    <text x="592" y="350" font-size="13.5" font-weight="700" fill="#3d55d9">下一步</text>
+    <text x="592" y="374" font-size="12.5" fill="#4a5468">到期提醒（桌面 / 微信 / 邮件）</text>
+    <text x="592" y="394" font-size="12.5" fill="#4a5468">.ics 导出与课程表一键导入</text>
+    <text x="592" y="414" font-size="12.5" fill="#4a5468">多用户与云端同步</text>
+  </g>
+
+  <!-- 底部致谢条 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="462" width="888" height="58" rx="14" fill="#1d2433"/>
+    <text x="480" y="486" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">411 · 伴学计划　|　贺奕锴 · 孙若瑜 · 冯冠瑀</text>
+    <text x="480" y="510" font-size="13" fill="#c9d0f2" text-anchor="middle">感谢聆听 · 欢迎提问 — 代码与说明：github.com/Whitefall2026/campus_agent</text>
+  </g>
+</svg>
