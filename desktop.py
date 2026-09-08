@@ -69,7 +69,7 @@ def _acquire_single_instance() -> bool:
     handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
     if not handle:
         return True
-    if kernel32.GetLastError() == 183:
+    if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         kernel32.CloseHandle(ctypes.c_void_p(handle))
         webbrowser.open(_read_running_url())
         return False
@@ -88,7 +88,9 @@ def _write_runtime(port: int) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     tmp = RUNTIME_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"pid": os.getpid(), "port": port, "started_at": time.time()}, f)
+        json.dump(
+            {"pid": os.getpid(), "port": port, "started_at": time.time()}, f
+        )
     os.replace(tmp, RUNTIME_FILE)
 
 
@@ -103,12 +105,14 @@ def _remove_runtime() -> None:
 
 
 def _make_server(preferred_port: int):
+    # 延迟导入可确保窗口版的 stdout/stderr 已准备好。
     from app.web.handlers import Handler
 
     ThreadingHTTPServer.daemon_threads = True
     try:
         return ThreadingHTTPServer((HOST, preferred_port), Handler)
     except OSError:
+        # 8000 被其他软件占用时使用系统分配端口，功能不因此失效。
         return ThreadingHTTPServer((HOST, 0), Handler)
 
 
@@ -129,8 +133,10 @@ def _stop_wechat() -> None:
 
 
 def _smoke_test(port: int) -> int:
-    """验证冻结程序中的静态资源、核心 API 与微信运行依赖。"""
+    """供构建脚本验证冻结程序中的资源、核心 API 与微信运行依赖。"""
     try:
+        # bridge 正常运行时使用的是这两个惰性导入。仅导入不会连接或读取微信，
+        # 但能发现 PyInstaller 漏收包、DLL 或二进制扩展的问题。
         from wechatauto.db import Listener, WeChatDB  # noqa: F401
         import uiautomation
 
@@ -169,6 +175,7 @@ def _smoke_test(port: int) -> int:
 
 
 def _run_tray(url: str) -> None:
+    """在系统托盘中提供后台服务的打开与退出控制。"""
     import pystray
     from PIL import Image
 
@@ -191,7 +198,10 @@ def _run_tray(url: str) -> None:
         pystray.MenuItem("退出 RUC Agent", exit_app),
     )
     tray = pystray.Icon(
-        "ruc-agent", tray_image, f"RUC Agent 校园管家 {__version__}（双击打开）", menu
+        "ruc-agent",
+        tray_image,
+        f"RUC Agent 校园管家 {__version__}（双击打开）",
+        menu,
     )
     tray.run()
 
@@ -209,7 +219,15 @@ def _run_gui(port: int, no_browser: bool) -> int:
         threading.Timer(0.45, lambda: webbrowser.open(url)).start()
 
     try:
-        _run_tray(url)
+        if os.name == "nt":
+            # 托盘菜单在后台维持服务生命周期，避免原来的控制对话框在
+            # 用户点击“打开应用”后立即再次出现。
+            _run_tray(url)
+        else:
+            # 方便源码在非 Windows 环境调试；安装产物不会走到这里。
+            print(f"RUC Agent 正在运行：{url}")
+            while True:
+                time.sleep(1)
         return 0
     finally:
         _stop_wechat()

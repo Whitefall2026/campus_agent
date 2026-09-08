@@ -8,6 +8,10 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 project_root = os.path.abspath(os.path.join(SPECPATH, ".."))
 wechat_root = os.path.join(project_root, "wechatauto-replica-main")
 
+# The WeChat library is vendored in this repository.  Add it explicitly so a
+# clean build does not depend on an editable package having been installed in
+# the developer's Python environment.  Its public package imports several
+# implementation modules dynamically, hence collect_submodules is required.
 sys.path.insert(0, wechat_root)
 hiddenimports = collect_submodules("wechatauto")
 hiddenimports += collect_submodules("pystray")

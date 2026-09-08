@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="t3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="960" height="540" fill="#eef1f8"/>
+
+  <!-- 页头 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="30" width="176" height="34" rx="17" fill="#e3e8fd"/>
+    <text x="124" y="53" font-size="15" font-weight="700" fill="#4f6ef7" text-anchor="middle">怎么解决</text>
+    <text x="36" y="102" font-size="34" font-weight="800" fill="#1d2433">说一句、转一条 → 日程与待办自动归位</text>
+    <text x="36" y="134" font-size="16" fill="#66708a">一个五页一体的桌面助手：对话 · 计划 · 日程 · 待办 · 我的（截图均来自本机真实运行）</text>
+  </g>
+
+  <!-- 五张页面截图卡 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <!-- 卡1 对话 -->
+    <g>
+      <rect x="36" y="164" width="164" height="148" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+      <image x="42" y="170" width="152" height="95" href="./shot_input.png"/>
+      <rect x="42" y="256" width="152" height="24" rx="8" fill="#eef2ff"/>
+      <text x="118" y="273" font-size="14" font-weight="700" fill="#3d55d9" text-anchor="middle">① 对话</text>
+      <text x="118" y="300" font-size="11" fill="#8a94a8" text-anchor="middle">直接说安排，确认后入库</text>
+    </g>
+    <!-- 卡2 计划 -->
+    <g>
+      <rect x="217" y="164" width="164" height="148" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+      <image x="223" y="170" width="152" height="95" href="./shot_planner.png"/>
+      <rect x="223" y="256" width="152" height="24" rx="8" fill="#eef2ff"/>
+      <text x="299" y="273" font-size="14" font-weight="700" fill="#3d55d9" text-anchor="middle">② 计划</text>
+      <text x="299" y="300" font-size="11" fill="#8a94a8" text-anchor="middle">AI 挑值得做的并给出排期</text>
+    </g>
+    <!-- 卡3 日程 -->
+    <g>
+      <rect x="398" y="164" width="164" height="148" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+      <image x="404" y="170" width="152" height="95" href="./shot_schedule.png"/>
+      <rect x="404" y="256" width="152" height="24" rx="8" fill="#eef2ff"/>
+      <text x="480" y="273" font-size="14" font-weight="700" fill="#3d55d9" text-anchor="middle">③ 日程</text>
+      <text x="480" y="300" font-size="11" fill="#8a94a8" text-anchor="middle">时间轴视图，可拖拽调整</text>
+    </g>
+    <!-- 卡4 待办 -->
+    <g>
+      <rect x="579" y="164" width="164" height="148" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+      <image x="585" y="170" width="152" height="95" href="./shot_todos.png"/>
+      <rect x="585" y="256" width="152" height="24" rx="8" fill="#eef2ff"/>
+      <text x="661" y="273" font-size="14" font-weight="700" fill="#3d55d9" text-anchor="middle">④ 待办</text>
+      <text x="661" y="300" font-size="11" fill="#8a94a8" text-anchor="middle">无时间任务也有兜底去处</text>
+    </g>
+    <!-- 卡5 我的 -->
+    <g>
+      <rect x="760" y="164" width="164" height="148" rx="12" fill="#ffffff" stroke="#e4e8f1"/>
+      <image x="766" y="170" width="152" height="95" href="./shot_mine.png"/>
+      <rect x="766" y="256" width="152" height="24" rx="8" fill="#eef2ff"/>
+      <text x="842" y="273" font-size="14" font-weight="700" fill="#3d55d9" text-anchor="middle">⑤ 我的</text>
+      <text x="842" y="300" font-size="11" fill="#8a94a8" text-anchor="middle">微信 / AI / 数据设置</text>
+    </g>
+  </g>
+
+  <!-- 中部一句话主链路 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="338" width="888" height="58" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <text x="62" y="363" font-size="15" font-weight="700" fill="#1d2433">闭环：说安排 / 转发微信 → 提取为结构化卡片 → 你点「采纳」→ 写入日程或待办</text>
+    <text x="62" y="386" font-size="13.5" fill="#66708a">识别不出的时间线索也不会丢——落入待办池，等待 AI 结合画像与精力择时规划</text>
+  </g>
+
+  <!-- 底部原则条 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="416" width="888" height="98" rx="14" fill="#1d2433"/>
+    <text x="62" y="448" font-size="16" font-weight="700" fill="#ffffff">三个产品原则</text>
+    <text x="62" y="480" font-size="14.5" fill="#c9d0f2">· AI 是可选增强，规则引擎兜底——没配 Key 也全功能可用，AI 失败不会漏事</text>
+    <text x="62" y="502" font-size="14.5" fill="#c9d0f2">· 先「待采纳」确认再入库——不替用户做决定；所有数据只存本机 data/</text>
+  </g>
+</svg>

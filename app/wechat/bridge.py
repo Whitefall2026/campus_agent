@@ -19,11 +19,13 @@ import importlib.util
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
 from app.ai import gateway as ai_gateway
@@ -41,6 +43,74 @@ from app.paths import DATA_DIR
 
 # 只处理文本消息（微信 db 里 local_type=1 显示名为“文本”）
 TEXT_TYPE = "文本"
+CARD_TYPE = "文件/链接/卡片"
+
+_OFFICIAL_ACTION_RE = re.compile(
+    r"(报名|申报|申请|提交|上交|填写|填报|缴费|缴款|预约|抢票|投票|打卡|"
+    r"签到|领取|下载|查看名单|确认|反馈|征集|招募|招聘|纳新|考试|竞赛|"
+    r"讲座|宣讲|活动|会议|培训|课程|作业|截止|通知|提醒|安排|须|请于|"
+    r"不要错过|开始啦|开放|延期|变更|调整)"
+)
+
+
+def _xml_text(node, name: str) -> str:
+    found = node.find(".//" + name)
+    return " ".join(str(found.text or "").split()) if found is not None else ""
+
+
+def official_push_items(msg: dict) -> list[dict]:
+    """从公众号文本或图文卡片中提取可展示的文章条目。"""
+    content = msg.get("content")
+    if not isinstance(content, str):
+        return []
+    content = content.strip().lstrip("\ufeff")
+    if not content or (content.startswith("[") and content.endswith("]")):
+        return []
+    mtype = str(msg.get("type") or "")
+    if mtype == TEXT_TYPE:
+        title = next((x.strip() for x in content.splitlines() if x.strip()), "")
+        return [{"title": title[:120], "summary": content, "url": "", "raw": content}]
+    if mtype != CARD_TYPE and "<appmsg" not in content and "<item" not in content:
+        return []
+    try:
+        root = ET.fromstring(content)
+        app_name = _xml_text(root, "appname") or _xml_text(root, "sourcedisplayname")
+        nodes = root.findall(".//item") or [root]
+        out, seen = [], set()
+        for node in nodes:
+            title = _xml_text(node, "title")
+            summary = _xml_text(node, "des") or _xml_text(node, "digest")
+            url = _xml_text(node, "url")
+            if not title or (title, url) in seen:
+                continue
+            seen.add((title, url))
+            raw = "\n".join(x for x in (title, summary) if x)
+            out.append({"title": title[:120], "summary": summary, "url": url,
+                        "app_name": app_name, "raw": raw})
+        return out
+    except ET.ParseError:
+        titles = re.findall(r"<title><!\[CDATA\[(.*?)\]\]></title>", content, re.S)
+        return [{"title": " ".join(t.split())[:120], "summary": "", "url": "",
+                 "raw": " ".join(t.split())} for t in titles if t.strip()]
+
+
+def official_todo_fields(item: dict, msg_ts=None) -> dict | None:
+    """判断公众号条目是否包含用户行动，并归一化为待办字段。"""
+    raw = str(item.get("raw") or "").strip()
+    if not raw:
+        return None
+    parsed = ai_gateway.rule_fields(raw, msg_ts)
+    actionable = bool(_OFFICIAL_ACTION_RE.search(raw)) or any(
+        parsed.get(k) for k in SIGNAL_FIELDS
+    )
+    if not actionable:
+        return None
+    fields = {k: parsed.get(k) for k in ai_gateway.ALLOWED_FIELDS}
+    fields["title"] = str(item.get("title") or fields.get("title") or raw)[:120]
+    fields["kind"] = kinds.KIND_TODO
+    fields["category"] = fields.get("category") or "other"
+    fields["priority"] = fields.get("priority") or "medium"
+    return kinds.normalize_item(fields, kind=kinds.KIND_TODO, raw=raw)
 
 # 具备任一字段即视为“像日程”
 SIGNAL_FIELDS = (
@@ -90,6 +160,7 @@ DEFAULT_CONFIG = {
     "backfill": 30,              # 首次连接/手动扫描时，每个会话回读最近 N 条消息
     "min_len": 4,                # 文本少于该字数直接忽略
     "ignore_self": False,        # True = 忽略自己发出的消息（注意转发到文件传输助手会变成自己发）
+    "watch_official_accounts": True,  # 自动发现并监听 gh_ 开头的公众号会话
 }
 
 CONFIG_KEYS = {
@@ -100,6 +171,7 @@ CONFIG_KEYS = {
     "backfill": int,
     "min_len": int,
     "ignore_self": bool,
+    "watch_official_accounts": bool,
 }
 
 
@@ -175,6 +247,7 @@ class WeChatBridge:
         self._db = None                     # WeChatDB（惰性导入，不在此 import）
         self._listener = None               # Listener
         self._chat_names: dict = {}         # username -> 显示名
+        self._official_chats: set = set()    # 自动发现的公众号 username
         self._sender_cache: dict = {}       # 发送者 username -> 显示名（回扫时避免反复查库）
         self._last_tick_persist = time.time()
         self._last_discover = 0.0
@@ -318,6 +391,9 @@ class WeChatBridge:
                 "auto_start": bool(self._config.get("auto_start")),
                 "watch": list(self._config.get("watch", [])),
                 "watch_all": bool(self._config.get("watch_all")),
+                "watch_official_accounts": bool(
+                    self._config.get("watch_official_accounts", True)
+                ),
                 "ignore_self": bool(self._config.get("ignore_self")),
                 "backfill": int(self._config.get("backfill", 0)),
                 "interval": float(self._config.get("interval", 1.5)),
@@ -416,10 +492,11 @@ class WeChatBridge:
                         if int(seq or 0) > cur:
                             self._state["watermarks"][user] = int(seq or 0)
             self._persist_state()
-        # watch_all 模式下，每隔一段时间发现新会话
+        # 监听全部会话或公众号自动发现开启时，每隔一段时间发现新会话。
         with self._lock:
             watch_all = bool(self._config.get("watch_all"))
-        if watch_all and db is not None and now - self._last_discover >= 20:
+            watch_official = bool(self._config.get("watch_official_accounts", True))
+        if (watch_all or watch_official) and db is not None and now - self._last_discover >= 20:
             self._last_discover = now
             self._discover_new_chats(db, lst)
 
@@ -491,6 +568,7 @@ class WeChatBridge:
             self._listener = lst
             self._connected = True
         self._chat_names = {t["username"]: t["display"] for t in targets}
+        self._official_chats = {t["username"] for t in targets if t.get("official")}
         with self._lock:
             self._state["account"] = {
                 "username": info.get("username"),
@@ -544,12 +622,20 @@ class WeChatBridge:
                 "username": username,
                 "display": display_of(username),
                 "requested": requested,
+                "official": username.startswith("gh_"),
             })
 
         if watch_all:
             for s in sessions:
                 add_target(s["username"], s["username"])
             return targets
+
+        with self._lock:
+            watch_official = bool(self._config.get("watch_official_accounts", True))
+        if watch_official:
+            for s in sessions:
+                if str(s.get("username") or "").startswith("gh_"):
+                    add_target(s["username"], "公众号自动发现")
 
         alias = {"文件传输助手": "filehelper", "filehelper": "filehelper"}
         with self._lock:
@@ -587,6 +673,12 @@ class WeChatBridge:
         for s in sessions:
             username = s["username"]
             with self._lock:
+                watch_all = bool(self._config.get("watch_all"))
+                watch_official = bool(self._config.get("watch_official_accounts", True))
+            is_official = str(username).startswith("gh_")
+            if not watch_all and not (watch_official and is_official):
+                continue
+            with self._lock:
                 known = username in self._state["watermarks"]
             if known:
                 continue
@@ -594,9 +686,12 @@ class WeChatBridge:
                 display = db.get_nickname(username) or username
             except Exception:
                 display = username
-            target = {"username": username, "display": display, "requested": username}
+            target = {"username": username, "display": display,
+                      "requested": username, "official": is_official}
             lst.add_listener(username, self._on_msg)  # 内部水位线先设到最新
             self._chat_names[username] = display
+            if is_official:
+                self._official_chats.add(username)
             self._backfill_chat(db, target, backfill)
 
     # ------------------------------------------------------------------
@@ -622,6 +717,19 @@ class WeChatBridge:
         ai_kept = []
         ai_queued = 0
         for msg in ordered:
+            if target.get("official"):
+                action = self._process_official_push(db, target, msg)
+                if action == "added":
+                    added += 1
+                elif action == "ignored":
+                    ignored += 1
+                try:
+                    seq = int(msg.get("sort_seq") or 0)
+                    if seq > max_seq:
+                        max_seq = seq
+                except (TypeError, ValueError):
+                    pass
+                continue
             if ai_enabled:
                 text = _text_of_message(msg)
                 if text is None:
@@ -684,8 +792,58 @@ class WeChatBridge:
             "username": user,
             "display": self._chat_names.get(user, user),
             "requested": user,
+            "official": user in self._official_chats or str(user).startswith("gh_"),
         }
-        self._process_message(self._db, target, msg)
+        if target["official"]:
+            self._process_official_push(self._db, target, msg)
+        else:
+            self._process_message(self._db, target, msg)
+
+    def _process_official_push(self, db, target: dict, msg: dict) -> str:
+        """公众号推送只进入待采纳，不直接修改用户待办。"""
+        username = str(target.get("username") or "")
+        display = target.get("display") or username or "公众号"
+        try:
+            seq = int(msg.get("sort_seq") or 0)
+        except (TypeError, ValueError):
+            seq = 0
+        if not seq or ai_gateway.is_ai_seen(username, seq, self.data_dir):
+            return "duplicate"
+        entries = official_push_items(msg)
+        added = 0
+        for item in entries:
+            fields = official_todo_fields(item, msg.get("create_time"))
+            if not fields:
+                continue
+            ai_gateway.add_pending({
+                "id": ai_gateway.new_pending_id(),
+                "chat_username": username,
+                "chat_display": display,
+                "sender": display,
+                "seq": seq,
+                "local_id": msg.get("local_id"),
+                "msg_ts": msg.get("create_time"),
+                "raw": item.get("raw") or "",
+                "fields": fields,
+                "method": "official-rule",
+                "source": "wechat_official",
+                "official_url": item.get("url") or "",
+                "reason": "公众号推送中检测到可执行事项",
+                "created_at": _now_iso(),
+                "status": "pending",
+            }, self.data_dir)
+            added += 1
+        # 成功、忽略都落处理标记，避免重连或手动扫描重复弹出。
+        ai_gateway.mark_ai_seen(username, seq, self.data_dir)
+        if added:
+            self._bump("added_total", added)
+            self._log_activity(display, display, str(msg.get("type") or "推送"), "",
+                               "added", f"公众号推送生成 {added} 条待采纳待办")
+            return "added"
+        self._bump("ignored_total")
+        self._log_activity(display, display, str(msg.get("type") or "推送"), "",
+                           "ignored", "公众号推送未检测到需要用户执行的事项")
+        return "ignored"
 
     def _process_message(self, db, target: dict, msg: dict) -> str:
         mtype = str(msg.get("type") or "")

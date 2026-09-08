@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="b5" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="960" height="540" fill="#eef1f8"/>
+
+  <!-- 页头 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="30" width="196" height="34" rx="17" fill="#e3e8fd"/>
+    <text x="134" y="53" font-size="15" font-weight="700" fill="#4f6ef7" text-anchor="middle">真实演示 1 · 截图</text>
+    <text x="36" y="98" font-size="32" font-weight="800" fill="#1d2433">对话即录入：说人话，AI 帮你记</text>
+    <text x="36" y="126" font-size="15" fill="#66708a">左为能力要点，右侧截图是本机 127.0.0.1:8000 真实运行画面</text>
+  </g>
+
+  <!-- 左侧要点卡 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="152" width="322" height="330" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <!-- 项1 -->
+    <g>
+      <circle cx="62" cy="186" r="13" fill="#4f6ef7"/>
+      <text x="62" y="191" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">✓</text>
+      <text x="84" y="191" font-size="15.5" font-weight="700" fill="#1d2433">中文数字照收不误</text>
+      <text x="56" y="215" font-size="13" fill="#4a5468">「八点半去图书馆」→ 8:30 · 中文数字也能识别</text>
+    </g>
+    <!-- 项2 -->
+    <g>
+      <circle cx="62" cy="250" r="13" fill="#4f6ef7"/>
+      <text x="62" y="255" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">✓</text>
+      <text x="84" y="255" font-size="15.5" font-weight="700" fill="#1d2433">时间 · 地点 · 类别自动归类</text>
+      <text x="56" y="279" font-size="13" fill="#4a5468">「周四晚7点例会」→ 19:00 · 会议 · 教二401</text>
+    </g>
+    <!-- 项3 -->
+    <g>
+      <circle cx="62" cy="314" r="13" fill="#f59e0b"/>
+      <text x="62" y="319" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">≈</text>
+      <text x="84" y="319" font-size="15.5" font-weight="700" fill="#1d2433">没时间？也不丢</text>
+      <text x="56" y="343" font-size="13" fill="#4a5468">「帮我买牛奶」→ 落入待办池，绝不丢失</text>
+    </g>
+    <!-- 项4 -->
+    <g>
+      <circle cx="62" cy="378" r="13" fill="#12a150"/>
+      <text x="62" y="383" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">✓</text>
+      <text x="84" y="383" font-size="15.5" font-weight="700" fill="#1d2433">先确认，再入库</text>
+      <text x="56" y="407" font-size="13" fill="#4a5468">「待采纳」卡片附来源原文与置信度；</text>
+      <text x="56" y="425" font-size="13" fill="#4a5468">点「采纳」或「忽略」——不替你做决定</text>
+    </g>
+    <!-- 卡底提示 -->
+    <rect x="56" y="448" width="282" height="26" rx="8" fill="#eef2ff"/>
+    <text x="197" y="466" font-size="12.5" font-weight="600" fill="#3d55d9" text-anchor="middle">冲突与 DDL 风险会随卡片一并提醒</text>
+  </g>
+
+  <!-- 右侧截图窗 -->
+  <g>
+    <!-- 浏览器窗 -->
+    <rect x="382" y="152" width="542" height="372" rx="14" fill="#ffffff" stroke="#d7dcea"/>
+    <rect x="382" y="152" width="542" height="34" rx="14" fill="#f3f5fb"/>
+    <circle cx="404" cy="169" r="5" fill="#e5484d"/>
+    <circle cx="419" cy="169" r="5" fill="#f5a524"/>
+    <circle cx="434" cy="169" r="5" fill="#12a150"/>
+    <rect x="452" y="158" width="280" height="22" rx="11" fill="#ffffff" stroke="#e4e8f1"/>
+    <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+      <text x="592" y="174" font-size="11.5" fill="#66708a" text-anchor="middle">127.0.0.1:8000 · RUC Agent · 对话</text>
+    </g>
+    <image x="390" y="192" width="526" height="326" href="./shot_input.png"/>
+    <!-- 待采纳徽章 -->
+    <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+      <rect x="398" y="204" width="158" height="30" rx="15" fill="#ffffff" stroke="#7b5cf0" stroke-width="2"/>
+      <circle cx="414" cy="219" r="7" fill="#7b5cf0"/>
+      <text x="414" y="223" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">!</text>
+      <text x="428" y="224" font-size="12.5" font-weight="700" fill="#5b3fd4">待采纳 · 2 项待确认</text>
+    </g>
+  </g>
+
+  <!-- 底部输入样例条 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="502" width="888" height="28" rx="14" fill="#ffffff" stroke="#e4e8f1"/>
+    <text x="52" y="521" font-size="13" fill="#66708a">试着这样输入</text>
+    <rect x="150" y="503" width="322" height="26" rx="13" fill="#f1f4fb"/>
+    <text x="311" y="521" font-size="13" fill="#4a5468" text-anchor="middle">9月6日下午3点到体育馆参加羽毛球比赛</text>
+    <path d="M486 510 h14 M500 503 l8 7 -8 7" stroke="#4f6ef7" stroke-width="2.5" fill="none"/>
+    <rect x="510" y="503" width="330" height="26" rx="13" fill="url(#b5)"/>
+    <text x="675" y="521" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">9月6日 15:00 · 体育馆 · 活动 · 耗能 2/5</text>
+  </g>
+</svg>

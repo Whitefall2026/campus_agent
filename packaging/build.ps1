@@ -10,6 +10,9 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $ProjectRoot
 
+& $Python packaging\build_icon.py
+if ($LASTEXITCODE -ne 0) { throw "Windows icon generation failed." }
+
 if (-not (Test-Path -LiteralPath "packaging\app_icon.ico")) {
     throw "Missing packaging\app_icon.ico."
 }

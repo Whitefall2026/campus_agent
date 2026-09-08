@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="960" height="540" fill="#eef1f8"/>
+
+  <!-- 页头 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="30" width="176" height="34" rx="17" fill="#e3e8fd"/>
+    <text x="124" y="53" font-size="15" font-weight="700" fill="#4f6ef7" text-anchor="middle">为什么需要它</text>
+    <text x="36" y="104" font-size="36" font-weight="800" fill="#1d2433">安排散落在各处，靠人脑迟早会漏</text>
+    <text x="36" y="136" font-size="16" fill="#66708a">不是「又一个日历」的问题——是信息进来与离开的方式，从根上就是碎的</text>
+  </g>
+
+  <!-- 三张痛点卡片 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <!-- 卡1 -->
+    <g>
+      <rect x="36" y="168" width="284" height="270" rx="16" fill="#ffffff" stroke="#e4e8f1"/>
+      <rect x="36" y="168" width="284" height="7" rx="3.5" fill="#f59e0b"/>
+      <!-- 图标：散落的消息 -->
+      <rect x="62" y="196" width="46" height="34" rx="10" fill="#fdf3e2"/>
+      <rect x="72" y="204" width="26" height="5" rx="2.5" fill="#d9a94b"/>
+      <rect x="72" y="214" width="18" height="5" rx="2.5" fill="#d9a94b"/>
+      <circle cx="101" cy="230" r="4" fill="#f59e0b"/>
+      <circle cx="124" cy="213" r="17" fill="#fdeeda"/>
+      <text x="124" y="219" font-size="15" font-weight="700" fill="#c07f14" text-anchor="middle">群</text>
+      <text x="62" y="266" font-size="19" font-weight="700" fill="#1d2433">安排散落在各处</text>
+      <text x="62" y="294" font-size="14.5" fill="#4a5468">微信群里一条公告、随口一句话、</text>
+      <text x="62" y="314" font-size="14.5" fill="#4a5468">文件传输助手里的通知——</text>
+      <text x="62" y="334" font-size="14.5" fill="#4a5468">转身就忘，再也想不起来</text>
+      <text x="62" y="368" font-size="13.5" fill="#8a94a8">口头约定 · 群公告 · 转发 · 脑内备忘</text>
+      <rect x="62" y="386" width="232" height="30" rx="8" fill="#fdf3e2"/>
+      <text x="178" y="406" font-size="13" font-weight="600" fill="#c07f14" text-anchor="middle">没有一处「唯一可信来源」</text>
+    </g>
+    <!-- 卡2 -->
+    <g>
+      <rect x="338" y="168" width="284" height="270" rx="16" fill="#ffffff" stroke="#e4e8f1"/>
+      <rect x="338" y="168" width="284" height="7" rx="3.5" fill="#e5484d"/>
+      <!-- 图标：撞车 -->
+      <rect x="364" y="196" width="46" height="34" rx="10" fill="#fdeaea"/>
+      <rect x="384" y="196" width="7" height="34" rx="3.5" fill="#e5484d"/>
+      <circle cx="406" cy="210" r="17" fill="#fdeaea"/>
+      <circle cx="420" cy="224" r="17" fill="#f8d5d5"/>
+      <path d="M400 236 L436 210" stroke="#e5484d" stroke-width="3"/>
+      <text x="364" y="266" font-size="19" font-weight="700" fill="#1d2433">撞车靠肉眼发现</text>
+      <text x="364" y="294" font-size="14.5" fill="#4a5468">两件事挤在同一时间、截止悄悄</text>
+      <text x="364" y="314" font-size="14.5" fill="#4a5468">逼近——等发现时往往已经</text>
+      <text x="364" y="334" font-size="14.5" fill="#4a5468">来不及调整</text>
+      <text x="364" y="368" font-size="13.5" fill="#8a94a8">时间重叠 · DDL 迫近 · 行程冲突</text>
+      <rect x="364" y="386" width="232" height="30" rx="8" fill="#fdeaea"/>
+      <text x="480" y="406" font-size="13" font-weight="600" fill="#d1363a" text-anchor="middle">冲突与遗漏，事前毫无感知</text>
+    </g>
+    <!-- 卡3 -->
+    <g>
+      <rect x="640" y="168" width="284" height="270" rx="16" fill="#ffffff" stroke="#e4e8f1"/>
+      <rect x="640" y="168" width="284" height="7" rx="3.5" fill="#12a150"/>
+      <!-- 图标：精力电池 -->
+      <rect x="666" y="196" width="46" height="34" rx="10" fill="#e5f6ec"/>
+      <rect x="672" y="202" width="34" height="16" rx="4" fill="none" stroke="#12a150" stroke-width="3"/>
+      <rect x="676" y="206" width="26" height="8" rx="2" fill="#12a150"/>
+      <rect x="700" y="224" width="6" height="5" rx="2" fill="#12a150"/>
+      <circle cx="726" cy="213" r="17" fill="#e5f6ec"/>
+      <text x="726" y="219" font-size="15" font-weight="700" fill="#0b7a3d" text-anchor="middle">%</text>
+      <text x="666" y="266" font-size="19" font-weight="700" fill="#1d2433">精力被高估</text>
+      <text x="666" y="294" font-size="14.5" fill="#4a5468">排期从不考虑「你现在还剩多少</text>
+      <text x="666" y="314" font-size="14.5" fill="#4a5468">精力」——临时的活硬塞进来，</text>
+      <text x="666" y="334" font-size="14.5" fill="#4a5468">拖延与熬夜成为常态</text>
+      <text x="666" y="368" font-size="13.5" fill="#8a94a8">硬塞式排期 · 深夜赶工 · 状态失衡</text>
+      <rect x="666" y="386" width="232" height="30" rx="8" fill="#e5f6ec"/>
+      <text x="782" y="406" font-size="13" font-weight="600" fill="#0b7a3d" text-anchor="middle">计划不心疼人，人就会垮掉</text>
+    </g>
+  </g>
+
+  <!-- 底部结论条 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="462" width="888" height="52" rx="14" fill="#1d2433"/>
+    <text x="62" y="494" font-size="17" font-weight="600" fill="#ffffff">缺的从来不是「又一个日历」——而是一个会自动提取、会排期、会心疼你的助手</text>
+  </g>
+</svg>

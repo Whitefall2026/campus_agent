@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#232f6b"/>
+      <stop offset="0.55" stop-color="#3a4bc9"/>
+      <stop offset="1" stop-color="#6a48d8"/>
+    </linearGradient>
+    <linearGradient id="pill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4f6ef7"/>
+      <stop offset="1" stop-color="#7b5cf0"/>
+    </linearGradient>
+    <marker id="arr" orient="auto-start-reverse" markerWidth="7" markerHeight="7" refX="5.2" refY="3.5" viewBox="0 0 7 7">
+      <path d="M0.4 0.6 L6 3.5 L0.4 6.4 Z" fill="#c6ccf2"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="540" fill="url(#bg)"/>
+  <!-- 装饰纯色圆（规避半透明/径向渐变渲染风险） -->
+  <circle cx="870" cy="60" r="150" fill="#5163d6"/>
+  <circle cx="940" cy="40" r="70" fill="#6a48d8"/>
+  <circle cx="52" cy="470" r="120" fill="#31409e"/>
+  <circle cx="8" cy="508" r="54" fill="#5163d6"/>
+  <circle cx="180" cy="520" r="30" fill="#243a8c"/>
+  <circle cx="820" cy="500" r="90" fill="#2e3a8c"/>
+
+  <!-- 顶部信息条 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="36" y="30" width="210" height="40" rx="20" fill="url(#pill)"/>
+    <text x="141" y="57" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">411 · 伴学计划</text>
+    <text x="924" y="56" font-size="16" font-weight="600" fill="#dde2ff" text-anchor="end">campus_agent · 开源 Demo</text>
+  </g>
+
+  <!-- 标题区 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif" text-anchor="middle">
+    <text x="480" y="126" font-size="22" font-weight="600" fill="#bcc6ff" letter-spacing="6">校园日程智能助手</text>
+    <text x="480" y="218" font-size="88" font-weight="800" fill="#ffffff" letter-spacing="4">RUC Agent</text>
+    <text x="480" y="266" font-size="26" font-weight="600" fill="#eef0ff">说一句 · 转一条，安排自动变成日程与待办</text>
+    <text x="480" y="316" font-size="19" fill="#d8ddff">对话与微信里随手记下的安排 → AI 提取为卡片 → 你确认后入库，越用越懂你</text>
+  </g>
+
+  <!-- Slogan 高亮 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="232" y="340" width="496" height="46" rx="23" fill="#ffffff"/>
+    <text x="480" y="369" font-size="21" font-weight="700" fill="#3a4bc9" text-anchor="middle">不让任何一件重要的事被吞没</text>
+  </g>
+
+  <!-- 五个页面节点流程 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+    <text x="480" y="416" font-size="15" fill="#c6ccf2" text-anchor="middle">五个页面 · 一个闭环</text>
+    <g>
+      <!-- 节点 1-5 -->
+      <circle cx="170" cy="468" r="27" fill="#ffffff"/>
+      <text x="170" y="474" font-size="17" font-weight="700" fill="#3a4bc9" text-anchor="middle">对话</text>
+      <circle cx="320" cy="468" r="27" fill="#ffffff"/>
+      <text x="320" y="474" font-size="17" font-weight="700" fill="#3a4bc9" text-anchor="middle">计划</text>
+      <circle cx="470" cy="468" r="27" fill="#ffffff"/>
+      <text x="470" y="474" font-size="17" font-weight="700" fill="#3a4bc9" text-anchor="middle">日程</text>
+      <circle cx="620" cy="468" r="27" fill="#ffffff"/>
+      <text x="620" y="474" font-size="17" font-weight="700" fill="#3a4bc9" text-anchor="middle">待办</text>
+      <circle cx="770" cy="468" r="27" fill="#ffffff"/>
+      <text x="770" y="474" font-size="17" font-weight="700" fill="#3a4bc9" text-anchor="middle">我的</text>
+      <!-- 箭头连线 -->
+      <line x1="197" y1="468" x2="291" y2="468" stroke="#c6ccf2" stroke-width="3" marker-end="url(#arr)"/>
+      <line x1="347" y1="468" x2="441" y2="468" stroke="#c6ccf2" stroke-width="3" marker-end="url(#arr)"/>
+      <line x1="497" y1="468" x2="591" y2="468" stroke="#c6ccf2" stroke-width="3" marker-end="url(#arr)"/>
+      <line x1="647" y1="468" x2="741" y2="468" stroke="#c6ccf2" stroke-width="3" marker-end="url(#arr)"/>
+    </g>
+    <text x="480" y="524" font-size="16" font-weight="600" fill="#dde2ff" text-anchor="middle">贺奕锴 · 孙若瑜 · 冯冠瑀</text>
+  </g>
+</svg>

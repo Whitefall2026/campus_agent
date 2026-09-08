@@ -1312,10 +1312,13 @@ class WeChatDB:
         return {
             "local_id": r["local_id"],
             "type": mtype,
+            "type_code": r["local_type"],
             "sender_id": sender_id,
             "sender_username": sender_username,
             "create_time": r["create_time"],
             "content": content,
+            "source": r["source"],
+            "packed_info": r["packed_info_data"],
             "sort_seq": r["sort_seq"],
         }
 
