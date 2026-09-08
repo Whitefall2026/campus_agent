@@ -10,6 +10,8 @@
 - **五页面布局**：对话 → 计划 → 日程 → 待办 → 我的（青色客户端风 UI）
 - **日程 / 待办分流**：带固定时间或地点的进入日程；只有截止时间或纯任务的
   进入待办；每条识别结果都可选择“采纳到日程 / 采纳到待办 / 忽略”
+- **跨日自动顺延**：今天之前仍未完成的普通日程会自动转入待办池，等待重新规划；
+  导入课表生成的课程不会顺延
 - **冲突提醒**：同一时间重叠、计划时间晚于截止时间，均会高亮提示
 - **日程时间轴**：按天查看、拖拽调整时段、空白时段直接添加
 - **待办池兜底**：识别不出时间的事项也绝不丢失，留在待办页等待规划
@@ -46,6 +48,19 @@ python server.py
 
 - 换端口：`python server.py 9000`
 - 数据保存在 `data/todos.json`，删除该文件即可重置
+
+### Windows 安装包（1.0.1）
+
+安装版已经包含 Python 运行环境，目标电脑无需另行安装 Python。安装后从开始菜单
+启动“RUC Agent 校园管家”，程序会驻留在系统托盘并打开默认浏览器。
+
+- 安装包：`dist\installer\RUC-Agent-Setup-1.0.1.exe`
+- 完整性校验：`dist\installer\SHA256SUMS-1.0.1.txt`
+- 用户数据：`%LOCALAPPDATA%\RUC Agent\data`
+
+升级或卸载程序不会主动删除用户数据。版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前本地构建未配置代码签名证书，首次运行时 Windows 可能显示 SmartScreen 提示；
+请先核对随包 SHA-256，再选择“更多信息 → 仍要运行”。正式公开分发前建议配置代码签名。
 
 ### 微信自动提取（可选）
 
@@ -130,8 +145,11 @@ app/planner/          「基于处境的推理与规划」引擎：
 app/wechat/bridge.py  微信读取/监听桥接（WeChatDB + Listener → 自动提取日程）
 app/web/handlers.py   HTTP 路由 + 静态页面服务
 app/paths.py          仓库内关键路径（data/、static/ 统一定位）
+app/version.py        应用版本号
+desktop.py            Windows 桌面/托盘启动器
 static/               前端页面（原生 HTML / CSS / JS，无框架）
 tests/                单元测试 + 真实 HTTP 端到端集成测试
+packaging/            PyInstaller、Inno Setup 与校验文件构建脚本
 wechatauto-replica-main/  第三方库 wechatauto-replica（微信能力，Apache-2.0）
 ```
 
@@ -170,6 +188,17 @@ wechatauto-replica-main/  第三方库 wechatauto-replica（微信能力，Apach
    改过前端后再跑 `node --check static/app.js`；也可单独看某天的能量排程
    演示：`python -m app.planner.demo`。
 5. 分支、提交信息与本地验证的约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+### 构建 Windows 安装包
+
+```powershell
+python -m pip install -r packaging\requirements-build.txt
+winget install --id JRSoftware.InnoSetup -e
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+
+构建会使用隔离数据目录运行测试，不会修改本机 `data/`；随后生成目录版 EXE、
+安装包和 SHA-256 校验文件。详细说明见 [packaging/README.md](packaging/README.md)。
 
 ## License
 

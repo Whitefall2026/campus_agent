@@ -94,6 +94,27 @@ class TestApiIntegration(unittest.TestCase):
         self.assertGreaterEqual(meta.get("candidates", 0), 1)
         self.assertEqual(len(res["plan"]["entries"] or []), 0)
 
+    def test_past_unfinished_schedule_rolls_into_todos(self):
+        self._reset_plan()
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+        s, res = self.req("POST", "/api/items", {
+            "title": "整理昨日会议纪要", "kind": "schedule",
+            "category": "meeting", "priority": "medium",
+            "date": yesterday, "time": "20:00", "end_time": "21:00",
+        })
+
+        self.assertEqual(s, 200)
+        item = res["todo"]
+        self.assertEqual(item["kind"], "todo")
+        self.assertIsNone(item["date"])
+        self.assertIsNone(item["time"])
+        self.assertIsNone(item["end_time"])
+        self.assertEqual(item["rolled_over_from"], yesterday)
+        self.assertEqual(item["rolled_over_from_time"], "20:00")
+        self.assertEqual(item["rolled_over_from_end_time"], "21:00")
+        self.assertIn(item["id"], [x["id"] for x in res["state"]["todo_items"]])
+
     def test_future_day_can_be_planned(self):
         # 打开未来某天也应能生成排程（不再只规划真实今天）
         self._reset_plan()

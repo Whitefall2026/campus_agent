@@ -29,6 +29,7 @@ from datetime import datetime
 from app.ai import gateway as ai_gateway
 from app.core.extractor import parse_text
 from app.core import kinds
+from app.core.storage import rollover_unfinished_schedules
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -190,6 +191,9 @@ class WeChatBridge:
             return []
 
     def _save_todos(self, todos: list) -> None:
+        # 微信监听线程也可能是跨日后的第一个写入方；写入前执行同一套顺延规则，
+        # 避免它把尚未转换的旧日程重新覆盖回 todos.json。
+        rollover_unfinished_schedules(todos)
         os.makedirs(os.path.dirname(self.todo_file), exist_ok=True)
         tmp = self.todo_file + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:

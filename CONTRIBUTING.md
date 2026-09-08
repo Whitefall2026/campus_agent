@@ -35,9 +35,19 @@ git push -u origin feat/my-feature
 代码是纯 Python 标准库实现，改完至少做一次语法/冒烟检查：
 
 ```bash
-python -m compileall app server.py
+python -m unittest discover -s tests
+python -m compileall app tests server.py desktop.py
 python server.py   # 浏览器打开 http://127.0.0.1:8000 手动过一遍
 ```
+
+发布 Windows 安装包前，再运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+
+打包脚本会隔离测试数据，生成 EXE、安装包和 SHA-256 校验文件。不要提交
+`build/`、`dist/` 或其中的临时文件。
 
 ## 注意事项
 
