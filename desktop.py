@@ -1,7 +1,7 @@
 """RUC Agent Windows 桌面入口。
 
-启动本地 HTTP 服务、打开默认浏览器，并提供一个很小的生命周期控制窗口。
-安装版使用此入口；开发者仍可继续运行 ``python server.py``。
+启动本地 HTTP 服务、打开默认浏览器，并通过系统托盘管理应用生命周期。
+安装版使用此入口；开发者仍可运行 ``python server.py``。
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import webbrowser
 from http.server import ThreadingHTTPServer
 
 from app.paths import DATA_DIR, RESOURCE_ROOT
+from app.version import __version__
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -199,7 +200,7 @@ def _run_tray(url: str) -> None:
     tray = pystray.Icon(
         "ruc-agent",
         tray_image,
-        "RUC Agent 校园管家（双击打开）",
+        f"RUC Agent 校园管家 {__version__}（双击打开）",
         menu,
     )
     tray.run()
@@ -242,6 +243,7 @@ def main(argv=None) -> int:
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", DEFAULT_PORT)))
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--smoke-test", action="store_true")
+    parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
 
     _configure_output()

@@ -1,0 +1,27 @@
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 1, 0),
+    prodvers=(1, 0, 1, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '080404b0',
+        [StringStruct('CompanyName', 'RUC Agent'),
+         StringStruct('FileDescription', 'RUC Agent 校园日程智能助手'),
+         StringStruct('FileVersion', '1.0.1'),
+         StringStruct('InternalName', 'RUCAgent'),
+         StringStruct('LegalCopyright', 'Apache License 2.0'),
+         StringStruct('OriginalFilename', 'RUCAgent.exe'),
+         StringStruct('ProductName', 'RUC Agent 校园管家'),
+         StringStruct('ProductVersion', '1.0.1')])
+    ]),
+    VarFileInfo([VarStruct('Translation', [2052, 1200])])
+  ]
+)

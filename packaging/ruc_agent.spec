@@ -54,6 +54,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=os.path.join(project_root, "packaging", "app_icon.ico"),
+    version=os.path.join(project_root, "packaging", "version_info.txt"),
 )
 
 coll = COLLECT(

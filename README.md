@@ -13,6 +13,7 @@ RUC Agent 是一个本地运行的校园生活助手。你可以像聊天一样�
 - **对话式录入**：直接输入“周四晚上 7 点在二教 401 开社团例会”，自动提取时间、地点和类别。
 - **先确认，再入库**：对话和 AI 识别结果以“待采纳”卡片展示，可选择加入日程、加入待办或忽略。
 - **日程与待办分流**：固定时间事项进入日程；只有截止时间或暂时无法排期的任务进入待办池。
+- **跨日自动顺延**：今天之前仍未完成的普通日程会自动转入待办池等待重新规划；导入课表生成的课程不会顺延。
 - **选择性规划**：结合截止时间、空闲时段、24 小时精力曲线和当前负载，只推荐现在值得规划的任务。
 - **风险与冲突提示**：识别时间重叠、排期晚于截止时间、能量超载和低完成概率，并给出拆分或降标建议。
 - **反馈闭环**：任务完成后可标记“轻松 / 正常 / 吃力”，系统用反馈校准后续时段的精力估计。
@@ -132,7 +133,9 @@ winget install --id JRSoftware.InnoSetup -e
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-产物位于 `dist\installer\RUC-Agent-Setup-1.0.0.exe`。构建脚本会先运行自动化测试，再对冻结后的程序执行静态页面与核心 API 冒烟验证。
+产物位于 `dist\installer\RUC-Agent-Setup-1.0.1.exe`，对应校验文件为 `dist\installer\SHA256SUMS-1.0.1.txt`。构建脚本会先运行自动化测试，再对冻结后的程序执行静态页面与核心 API 冒烟验证。
+
+当前安装包未配置 Authenticode 代码签名，首次运行时 Windows 可能显示 SmartScreen 提示。请先核对 Release 附带的 SHA-256 校验文件，再决定是否运行；正式公开分发前建议配置代码签名。
 
 ## 数据与隐私
 
@@ -164,6 +167,7 @@ app/
 ├─ web/handlers.py           页面与 API 路由
 ├─ wechat/bridge.py          微信读取、监听、回填与公众号识别
 └─ paths.py                  静态资源和用户数据路径
+app/version.py               应用版本号
 static/                      原生前端页面、样式和交互脚本
 tests/                       单元测试与真实 HTTP API 集成测试
 packaging/                   PyInstaller 与 Inno Setup 构建脚本
@@ -193,7 +197,7 @@ wechatauto-replica-main/     微信能力依赖的随仓库副本
 python -m unittest discover -s tests
 ```
 
-当前项目共 70 项单元与端到端测试。还可以执行以下检查：
+当前项目共 76 项单元与端到端测试。还可以执行以下检查：
 
 ```bash
 python -m compileall app tests server.py desktop.py
@@ -216,6 +220,17 @@ python -m app.planner.demo
 - 导出 `.ics` 并与系统日历同步
 - 更多学校课程表格式与一键导入
 - 多端同步与可选的加密备份
+
+### 构建 Windows 安装包
+
+```powershell
+python -m pip install -r packaging\requirements-build.txt
+winget install --id JRSoftware.InnoSetup -e
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+
+构建会使用隔离数据目录运行测试，不会修改本机 `data/`；随后生成目录版 EXE、
+安装包和 SHA-256 校验文件。详细说明见 [packaging/README.md](packaging/README.md)。
 
 ## License
 

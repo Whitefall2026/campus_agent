@@ -1,5 +1,7 @@
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.1"
+#endif
 #define MyAppName "RUC Agent 校园管家"
-#define MyAppVersion "1.0.0"
 #define MyAppPublisher "RUC Agent"
 #define MyAppExeName "RUCAgent.exe"
 #define ProjectRoot SourcePath + ".."
@@ -31,6 +33,8 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 [Files]
 Source: "{#ProjectRoot}\dist\RUCAgent\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ProjectRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectRoot}\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ProjectRoot}\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "{#ProjectRoot}\wechatauto-replica-main\LICENSE"; DestDir: "{app}"; DestName: "LICENSE-wechatauto-replica.txt"; Flags: ignoreversion
 
