@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
+from unittest.mock import patch
 
 from app.paths import DATA_DIR
 from app.ai import gateway as ai_gateway
@@ -78,37 +79,6 @@ class TestApiIntegration(unittest.TestCase):
         """清空待办并重置今日排程缓存，保证每个用例从确定状态开始。"""
         self.req("POST", "/api/clear", {"scope": "all"})
         self.req("POST", "/api/plan/ai", {"date": date.today().isoformat()})
-
-    def test_accept_official_push_directly_to_todo(self):
-        self._reset_plan()
-        item_id = "official01"
-        ai_gateway.add_pending({
-            "id": item_id,
-            "chat_username": "gh_jobs",
-            "chat_display": "人大就业",
-            "sender": "人大就业",
-            "seq": 9001,
-            "raw": "秋招报名通知\n请于9月10日前提交报名表",
-            "fields": {
-                "title": "秋招报名通知",
-                "kind": "todo",
-                "category": "deadline",
-                "priority": "medium",
-                "deadline": "%04d-09-10" % date.today().year,
-            },
-            "method": "official-rule",
-            "source": "wechat_official",
-            "official_url": "https://example.com/apply",
-            "status": "pending",
-        })
-        status, res = self.req(
-            "POST", "/api/ai/pending/%s/accept" % item_id, {"kind": "todo"}
-        )
-        self.assertEqual(status, 200)
-        todo = next(t for t in res["state"]["todos"] if t.get("wx_seq") == 9001)
-        self.assertEqual(todo["kind"], "todo")
-        self.assertEqual(todo["source"], "wechat_official")
-        self.assertEqual(todo["title"], "秋招报名通知")
 
     def test_first_visit_reports_planable_candidates(self):
         # 只有未来截止的未排期待办时，首访计划页也应看到候选并触发自动规划
@@ -402,6 +372,28 @@ class TestApiIntegration(unittest.TestCase):
         s, prof2 = self.req("GET", "/api/ai/profile")
         self.assertEqual(s, 200)
         self.assertEqual(int(prof2.get("evidence_count") or 0), before)
+
+    def test_chat_actionable_task_still_returns_pending_when_ai_omits_items(self):
+        self._reset_plan()
+        self.req("POST", "/api/chat/reset", {})
+        model_reply = json.dumps({
+            "reply": "我记下了：完成线性代数第三讲作业。这条我先放进待你采纳，等你确认。",
+            "items": [],
+        }, ensure_ascii=False)
+
+        with patch("app.ai.chat.ai_gateway.is_ready", return_value=True), \
+                patch("app.ai.chat.ai_gateway.chat_completion",
+                      return_value=model_reply):
+            status, result = self.req("POST", "/api/chat", {
+                "text": "完成线性代数第三讲作业",
+            })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(len(result.get("items") or []), 1)
+        item_id = result["items"][0]["id"]
+        status, pending = self.req("GET", "/api/ai/pending")
+        self.assertEqual(status, 200)
+        self.assertIn(item_id, [item["id"] for item in pending["pending"]])
 
     def test_adopt_uses_displayed_future_deadline_slot(self):
         # 未来截止的任务也会被提前安排；采纳时应写入页面展示的那个时段，

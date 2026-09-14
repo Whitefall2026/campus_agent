@@ -276,7 +276,8 @@ def mark_item_outcome(item_id: str, outcome: str) -> bool:
 # ---------------------------------------------------------------------------
 # 对话主流程
 # ---------------------------------------------------------------------------
-def _rule_turn(text: str, ai_error: str | None = None) -> dict:
+def _rule_turn(text: str, ai_error: str | None = None,
+               allow_unscheduled: bool = False) -> dict:
     """AI 不可用时的规则兜底：能解析就进待采纳，否则礼貌说明。"""
     reply = ""
     items = []
@@ -284,7 +285,8 @@ def _rule_turn(text: str, ai_error: str | None = None) -> dict:
         parsed = parse_text(text)
     except Exception as exc:
         parsed = {"ok": False, "error": str(exc)}
-    if parsed.get("ok") and any(parsed.get(k) for k in SIGNAL_FIELDS):
+    if parsed.get("ok") and (
+            allow_unscheduled or any(parsed.get(k) for k in SIGNAL_FIELDS)):
         fields = kinds.normalize_item(
             {k: parsed.get(k) for k in (
                 "title", "category", "priority", "date", "time", "end_time",
@@ -355,6 +357,8 @@ def chat_turn(text: str) -> dict:
                     text, pit["fields"], "ai", pit["confidence"], pit["reason"], i
                 )
                 items.append(snapshot)
+            if not items and any(mark in reply for mark in ("待采纳", "待你采纳")):
+                items = _rule_turn(text, allow_unscheduled=True)["items"]
             if not reply:
                 reply = "收到～ 我把识别出的安排放进待你采纳了。" if items \
                     else "收到～ 有什么要安排的吗？"

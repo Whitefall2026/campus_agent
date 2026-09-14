@@ -95,7 +95,6 @@ function timeRange(t) {
 }
 
 function sourceBadge(t) {
-  if (t.source === "wechat_official") return badge("公众号", "#07a35a");
   if (t.source === "wechat_ai") return badge("微信AI", "#0e7490");
   if (t.source === "wechat") return badge("微信", "#0e7490");
   if (t.source === "chat_ai") return badge("AI 对话", "#0e7490");
@@ -253,8 +252,7 @@ function incomingItemHTML(p) {
   const k = KIND[kind];
   const method = p.method === "ai"
     ? "AI 识别"
-    : p.method === "official-rule" ? "公众号识别"
-      : p.method === "rule-fallback" ? "规则识别" : "规则识别";
+    : p.method === "rule-fallback" ? "规则识别" : "规则识别";
   const conf = p.confidence != null
     ? `置信度 ${Math.round(p.confidence * 100)}%`
     : "";
@@ -262,10 +260,6 @@ function incomingItemHTML(p) {
   const sourceLine = p.chat_display && p.chat_display !== "chat"
     ? `来源：${esc(p.chat_display)}${p.sender && p.sender !== "我" ? " · " + esc(p.sender) : ""}`
     : "来源：微信消息";
-  const acceptButtons = p.source === "wechat_official"
-    ? `<button class="small ok-todo" data-chat-id="${esc(p.id)}" data-chat-act="accept" data-chat-kind="todo">采纳到待办</button>`
-    : `<button class="small ok-schedule" data-chat-id="${esc(p.id)}" data-chat-act="accept" data-chat-kind="schedule">采纳到日程</button>
-       <button class="small ok-todo" data-chat-id="${esc(p.id)}" data-chat-act="accept" data-chat-kind="todo">采纳到待办</button>`;
   return `
     <div class="chat-item" data-id="${esc(p.id)}">
       <div class="ai-item-head">
@@ -276,11 +270,11 @@ function incomingItemHTML(p) {
       <div class="ai-when">${fmtAiWhen(f) || "未识别到明确时间"}</div>
       ${f.location ? `<div class="ai-when">${esc(f.location)}</div>` : ""}
       ${src ? `<div class="ai-raw">${src}</div>` : ""}
-      ${/^https?:\/\//i.test(p.official_url || "") ? `<div class="ai-reason"><a href="${esc(p.official_url)}" target="_blank" rel="noopener noreferrer">查看公众号原文</a></div>` : ""}
       <div class="ai-reason">${sourceLine}</div>
       ${p.error ? `<div class="ai-err">AI 调用失败：${esc(p.error)}（本次为临时规则识别）</div>` : ""}
       <div class="ai-actions">
-        ${acceptButtons}
+        <button class="small ok-schedule" data-chat-id="${esc(p.id)}" data-chat-act="accept" data-chat-kind="schedule">采纳到日程</button>
+        <button class="small ok-todo" data-chat-id="${esc(p.id)}" data-chat-act="accept" data-chat-kind="todo">采纳到待办</button>
         <button class="ghost small" data-chat-id="${esc(p.id)}" data-chat-act="reject">忽略</button>
       </div>
     </div>`;
@@ -433,7 +427,6 @@ function renderWx(partial) {
   const input = $("#wxChats");
   if (document.activeElement !== input) input.value = (s.watch || []).join("、");
   $("#wxAll").checked = !!s.watch_all;
-  $("#wxOfficial").checked = s.watch_official_accounts !== false;
   $("#wxStartBtn").disabled = !!s.running;
   $("#wxScanBtn").disabled = !s.connected;
   $("#wxStopBtn").disabled = !s.running;
@@ -1062,7 +1055,6 @@ $("#wxApplyBtn").addEventListener("click", async () => {
   const res = await wxAction("/api/wechat/config", {
     watch,
     watch_all: $("#wxAll").checked,
-    watch_official_accounts: $("#wxOfficial").checked,
   });
   if (res) refreshWx();
 });
