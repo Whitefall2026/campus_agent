@@ -30,6 +30,7 @@ SetupIconFile={#ProjectRoot}\packaging\app_icon.ico
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："; Flags: unchecked
+Name: "autostart"; Description: "随 Windows 启动（后台运行，不自动打开浏览器）"; GroupDescription: "启动选项："
 
 [Files]
 Source: "{#ProjectRoot}\dist\RUCAgent\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -41,6 +42,10 @@ Source: "{#ProjectRoot}\wechatauto-replica-main\LICENSE"; DestDir: "{app}"; Dest
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--no-browser"; WorkingDir: "{app}"; Tasks: autostart
+
+[InstallDelete]
+Type: files; Name: "{userstartup}\{#MyAppName}.lnk"; Tasks: not autostart
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent

@@ -123,7 +123,7 @@ AI 配置保存在 `data/ai_config.json`，其中包含 API Key。请勿提交�
 
 ## Windows 安装包
 
-安装版会打包 Python 运行环境，目标电脑无需单独安装 Python。个人数据保存在 `%LOCALAPPDATA%\RUC Agent\data`，与程序文件分离，正常升级或卸载不会覆盖这些数据。
+安装版会打包 Python 运行环境，目标电脑无需单独安装 Python。安装时默认勾选“随 Windows 启动”；登录 Windows 后应用会在系统托盘中后台运行，不会自动打开浏览器。重新运行安装包可取消该选项，卸载时也会自动清理启动项。个人数据保存在 `%LOCALAPPDATA%\RUC Agent\data`，与程序文件分离，正常升级或卸载不会覆盖这些数据。
 
 在项目根目录构建安装包：
 
