@@ -308,6 +308,54 @@ textarea:focus {
 .empty-list { color: var(--ink-2); background: var(--card); border: 1px dashed var(--line); border-radius: var(--radius); padding: 28px; text-align: center; }
 .empty-list .empty-actions { margin-top: 14px; }
 
+/* ---------- 长期目标 ---------- */
+.goal-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
+.goal-sort { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12.5px; }
+.goal-sort select {
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  padding: 7px 30px 7px 10px; font: inherit;
+}
+.goal-stats {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--line); background: #fff; margin-bottom: 14px;
+}
+.goal-stats > div { padding: 12px 16px; border-right: 1px solid var(--line); }
+.goal-stats > div:last-child { border-right: 0; }
+.goal-stats span { color: var(--ink-2); font-size: 12px; display: block; }
+.goal-stats b { font-size: 22px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.goal-form { margin-bottom: 16px; }
+.goal-form-row {
+  display: grid; grid-template-columns: minmax(240px, 1fr) 190px auto;
+  gap: 12px; align-items: end;
+}
+.goal-form-actions { display: flex; gap: 8px; }
+.goal-form-actions button { min-height: 39px; }
+.goal-form-status { min-height: 18px; margin-top: 5px; color: var(--ink-2); font-size: 12px; }
+.goal-list { display: flex; flex-direction: column; gap: 8px; }
+.goal-list-head, .goal-row {
+  display: grid; grid-template-columns: minmax(220px, 1fr) 160px 150px 140px;
+  gap: 14px; align-items: center;
+}
+.goal-list-head { padding: 0 14px 2px; color: var(--ink-2); font-size: 12px; }
+.goal-row {
+  background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--ok);
+  padding: 13px 14px; min-height: 64px;
+}
+.goal-project { min-width: 0; }
+.goal-project strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.goal-date time { font-variant-numeric: tabular-nums; }
+.goal-countdown { font-weight: 650; font-variant-numeric: tabular-nums; }
+.goal-countdown.normal { color: var(--ok); }
+.goal-countdown.soon { color: var(--warn); }
+.goal-countdown.overdue { color: var(--danger); }
+.goal-countdown.today {
+  display: inline-block; color: #fff; background: var(--accent);
+  padding: 2px 8px; border-radius: 5px;
+}
+.goal-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.goal-mobile-label { display: none; color: var(--ink-2); font-size: 11px; }
+.goal-empty { display: flex; flex-direction: column; gap: 4px; }
+
 /* ---------- AI 排期建议 ---------- */
 .plan-card { margin-bottom: 14px; }
 .plan-item {
@@ -441,6 +489,9 @@ footer { text-align: center; color: var(--ink-2); font-size: 12px; padding: 16px
   .input-grid, .mine-grid { grid-template-columns: 1fr; }
   .topbar { flex-wrap: wrap; }
   .stats { justify-content: flex-start; order: 3; width: 100%; }
+  .goal-form-row { grid-template-columns: minmax(220px, 1fr) 180px; }
+  .goal-form-actions { grid-column: 1 / -1; }
+  .goal-list-head, .goal-row { grid-template-columns: minmax(190px, 1fr) 135px 125px 130px; }
 }
 
 /* ================= 计划页（能量看板） ================= */
@@ -853,4 +904,33 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 @media (max-width: 1080px) {
   .planner-grid { grid-template-columns: 1fr; }
   .page-chat { height: calc(100vh - 130px); }
+}
+
+@media (max-width: 980px) {
+  .nav { overflow-x: auto; max-width: 100%; }
+}
+
+@media (max-width: 680px) {
+  main { padding: 14px 12px; }
+  .topbar { height: auto; padding: 8px 12px; gap: 8px; overflow: hidden; }
+  .brand, .toolbar, .stats { display: none; }
+  .nav { width: 100%; min-width: 0; }
+  .nav-item { padding: 7px 11px; }
+  .goal-page-head { align-items: stretch; flex-direction: column; gap: 10px; }
+  .goal-sort { justify-content: space-between; }
+  .goal-sort select { min-width: 104px; }
+  .goal-stats, .goal-form, .goal-list { min-width: 0; width: 100%; }
+  .goal-form .card-head { align-items: flex-start; flex-direction: column; }
+  .goal-form-row { grid-template-columns: 1fr; }
+  .goal-form-actions { grid-column: auto; }
+  .goal-form-actions button { flex: 1; }
+  .goal-stats > div { padding: 10px; }
+  .goal-stats b { font-size: 19px; }
+  .goal-list-head { display: none; }
+  .goal-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; }
+  .goal-row > * { min-width: 0; }
+  .goal-project { grid-column: 1 / -1; }
+  .goal-actions { grid-column: 1 / -1; justify-content: stretch; }
+  .goal-actions button { flex: 1; min-width: 0; }
+  .goal-mobile-label { display: block; margin-bottom: 2px; }
 }

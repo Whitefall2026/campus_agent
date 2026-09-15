@@ -16,6 +16,7 @@
     <a href="#/planner" data-page="planner" class="nav-item">计划</a>
     <a href="#/schedule" data-page="schedule" class="nav-item">日程</a>
     <a href="#/todos" data-page="todos" class="nav-item">待办</a>
+    <a href="#/goals" data-page="goals" class="nav-item">长期目标</a>
     <a href="#/mine" data-page="mine" class="nav-item">我的</a>
   </nav>
   <div class="stats" id="stats"></div>
@@ -144,7 +145,54 @@
     <div id="todoList" class="todo-list"></div>
   </section>
 
-  <!-- ===================== 页面五：我的 ===================== -->
+  <!-- ===================== 页面五：长期目标 ===================== -->
+  <section class="page page-goals hidden" data-page="goals">
+    <div class="page-head goal-page-head">
+      <div>
+        <h1>长期目标</h1>
+        <p class="page-sub">把重要项目和最终期限放在同一处，持续关注临近节点</p>
+      </div>
+      <label class="goal-sort" for="goalSort">
+        <span>截止时间</span>
+        <select id="goalSort">
+          <option value="asc">升序</option>
+          <option value="desc">降序</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="goal-stats" aria-label="目标统计概览">
+      <div><span>全部目标</span><b id="goalTotal">0</b></div>
+      <div><span>7 天内到期</span><b id="goalSoon">0</b></div>
+      <div><span>已过期</span><b id="goalOverdue">0</b></div>
+    </div>
+
+    <form id="goalForm" class="card goal-form">
+      <div class="card-head">
+        <h2 id="goalFormTitle">添加目标</h2>
+        <span class="hint" id="goalFormHint">目标数据仅保存在当前浏览器</span>
+      </div>
+      <div class="goal-form-row">
+        <label class="edit-field goal-name-field">
+          <span>项目名称</span>
+          <input type="text" id="goalName" required maxlength="120" placeholder="例如：完成毕业论文初稿" autocomplete="off">
+        </label>
+        <label class="edit-field goal-deadline-field">
+          <span>截止时间</span>
+          <input type="date" id="goalDeadline" required>
+        </label>
+        <div class="goal-form-actions">
+          <button type="submit" id="goalSaveBtn" class="primary">添加</button>
+          <button type="button" id="goalCancelBtn" class="ghost hidden">取消</button>
+        </div>
+      </div>
+      <div id="goalFormStatus" class="goal-form-status" aria-live="polite"></div>
+    </form>
+
+    <div id="goalList" class="goal-list" aria-live="polite"></div>
+  </section>
+
+  <!-- ===================== 页面六：我的 ===================== -->
   <section class="page page-mine hidden" data-page="mine">
     <div class="page-head">
       <h1>我的</h1>

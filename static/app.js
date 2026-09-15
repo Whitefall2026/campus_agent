@@ -25,7 +25,8 @@ const KIND = {
   todo: { label: "待办", color: "#d97706", icon: "", cls: "kind-todo" },
 };
 
-const PAGES = ["input", "schedule", "todos", "planner", "mine"];
+const PAGES = ["input", "schedule", "todos", "goals", "planner", "mine"];
+const GOALS_KEY = "ruc-agent.long-term-goals.v1";
 const state = {
   data: null,
   page: "input",
@@ -38,6 +39,9 @@ const state = {
   suggest: null,    // /api/plan/suggest 载荷 {items, energy, summary}
   energy: null,     // /api/energy {hours, available_points}
   ratedIds: new Set(),
+  goals: [],
+  goalSort: "asc",
+  goalEditId: null,
 };
 
 /* ---------------- 基础工具 ---------------- */
@@ -141,6 +145,7 @@ function showPage() {
   });
   if (state.page === "schedule") renderSchedulePage();
   if (state.page === "todos") renderTodosPage();
+  if (state.page === "goals") renderGoals();
   // 计划页只在当天首次进入时自动规划；切走再切回沿用已生成的结果，
   // 需要重排时由用户点「重新规划」。
   if (state.page === "planner") { loadPlanner(); loadAiYou(); }
@@ -840,6 +845,179 @@ $(".todo-filter").addEventListener("click", (e) => {
   if (!chip) return;
   state.todoFilter = chip.dataset.todoFilter;
   renderTodosPage();
+});
+
+/* ================= 长期目标（浏览器本地存储） ================= */
+function goalId() {
+  return self.crypto && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `goal-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function goalDayNumber(iso) {
+  const [year, month, day] = String(iso).split("-").map(Number);
+  return Date.UTC(year, month - 1, day) / 86400000;
+}
+
+function goalDaysLeft(deadline) {
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86400000;
+  return Math.round(goalDayNumber(deadline) - today);
+}
+
+function goalCountdown(deadline) {
+  const days = goalDaysLeft(deadline);
+  if (days < 0) return { text: `已过期 ${Math.abs(days)} 天`, cls: "overdue" };
+  if (days === 0) return { text: "今天截止", cls: "today" };
+  if (days < 7) return { text: `还剩 ${days} 天`, cls: "soon" };
+  return { text: `还剩 ${days} 天`, cls: "normal" };
+}
+
+function validGoal(goal) {
+  return goal && typeof goal.id === "string" && typeof goal.name === "string"
+    && goal.name.trim() && /^\d{4}-\d{2}-\d{2}$/.test(goal.deadline || "");
+}
+
+function saveGoals() {
+  try {
+    localStorage.setItem(GOALS_KEY, JSON.stringify(state.goals));
+    return true;
+  } catch (_) {
+    alert("目标保存失败，请检查浏览器是否允许本地存储。");
+    return false;
+  }
+}
+
+function loadGoals() {
+  const raw = localStorage.getItem(GOALS_KEY);
+  if (raw === null) {
+    const now = new Date().toISOString();
+    state.goals = [
+      { id: goalId(), name: "完成毕业论文初稿", deadline: addDays(todayISO(), 30), createdAt: now },
+      { id: goalId(), name: "准备英语等级考试", deadline: addDays(todayISO(), 75), createdAt: now },
+    ];
+    saveGoals();
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    state.goals = Array.isArray(parsed) ? parsed.filter(validGoal).map((goal) => ({
+      id: goal.id,
+      name: goal.name.trim().slice(0, 120),
+      deadline: goal.deadline,
+      createdAt: typeof goal.createdAt === "string" ? goal.createdAt : new Date().toISOString(),
+    })) : [];
+  } catch (_) {
+    state.goals = [];
+  }
+}
+
+function resetGoalForm() {
+  state.goalEditId = null;
+  $("#goalForm").reset();
+  $("#goalFormTitle").textContent = "添加目标";
+  $("#goalSaveBtn").textContent = "添加";
+  $("#goalCancelBtn").classList.add("hidden");
+  $("#goalFormStatus").textContent = "";
+}
+
+function renderGoals() {
+  const sorted = [...state.goals].sort((a, b) => {
+    const order = a.deadline.localeCompare(b.deadline)
+      || String(a.createdAt).localeCompare(String(b.createdAt));
+    return state.goalSort === "desc" ? -order : order;
+  });
+  $("#goalTotal").textContent = state.goals.length;
+  $("#goalOverdue").textContent = state.goals.filter((goal) => goalDaysLeft(goal.deadline) < 0).length;
+  $("#goalSoon").textContent = state.goals.filter((goal) => {
+    const days = goalDaysLeft(goal.deadline);
+    return days >= 0 && days <= 7;
+  }).length;
+
+  const list = $("#goalList");
+  if (!sorted.length) {
+    list.innerHTML = `<div class="empty-list goal-empty">
+      <strong>还没有长期目标</strong>
+      <span>添加第一个目标，让重要期限始终清晰可见。</span>
+      <div class="empty-actions"><button class="primary small" data-goal-action="focus-add">添加目标</button></div>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = `<div class="goal-list-head" aria-hidden="true">
+      <span>项目名称</span><span>截止时间</span><span>倒数时间</span><span>操作</span>
+    </div>${sorted.map((goal) => {
+      const countdown = goalCountdown(goal.deadline);
+      return `<article class="goal-row" data-goal-id="${esc(goal.id)}">
+        <div class="goal-project"><span class="goal-mobile-label">项目名称</span><strong>${esc(goal.name)}</strong></div>
+        <div class="goal-date"><span class="goal-mobile-label">截止时间</span><time datetime="${esc(goal.deadline)}">${esc(goal.deadline)}</time></div>
+        <div><span class="goal-mobile-label">倒数时间</span><span class="goal-countdown ${countdown.cls}">${countdown.text}</span></div>
+        <div class="goal-actions">
+          <button class="ghost small" data-goal-action="edit">编辑</button>
+          <button class="ghost small danger-text" data-goal-action="delete">删除</button>
+        </div>
+      </article>`;
+    }).join("")}`;
+}
+
+$("#goalForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("#goalName").value.trim();
+  const deadline = $("#goalDeadline").value;
+  if (!name || !deadline) {
+    e.currentTarget.reportValidity();
+    return;
+  }
+  const previous = [...state.goals];
+  if (state.goalEditId) {
+    state.goals = state.goals.map((goal) => goal.id === state.goalEditId
+      ? { ...goal, name: name.slice(0, 120), deadline }
+      : goal);
+  } else {
+    state.goals.push({ id: goalId(), name: name.slice(0, 120), deadline, createdAt: new Date().toISOString() });
+  }
+  if (!saveGoals()) {
+    state.goals = previous;
+    return;
+  }
+  resetGoalForm();
+  renderGoals();
+});
+
+$("#goalCancelBtn").addEventListener("click", resetGoalForm);
+$("#goalSort").addEventListener("change", (e) => {
+  state.goalSort = e.target.value === "desc" ? "desc" : "asc";
+  renderGoals();
+});
+$("#goalList").addEventListener("click", (e) => {
+  const button = e.target.closest("[data-goal-action]");
+  if (!button) return;
+  if (button.dataset.goalAction === "focus-add") {
+    $("#goalName").focus();
+    return;
+  }
+  const row = button.closest("[data-goal-id]");
+  const goal = row && state.goals.find((item) => item.id === row.dataset.goalId);
+  if (!goal) return;
+  if (button.dataset.goalAction === "edit") {
+    state.goalEditId = goal.id;
+    $("#goalName").value = goal.name;
+    $("#goalDeadline").value = goal.deadline;
+    $("#goalFormTitle").textContent = "编辑目标";
+    $("#goalSaveBtn").textContent = "保存";
+    $("#goalCancelBtn").classList.remove("hidden");
+    $("#goalFormStatus").textContent = `正在编辑：${goal.name}`;
+    $("#goalName").focus();
+    $("#goalForm").scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  if (button.dataset.goalAction === "delete" && confirm(`确认删除目标“${goal.name}”？`)) {
+    const previous = [...state.goals];
+    state.goals = state.goals.filter((item) => item.id !== goal.id);
+    if (!saveGoals()) state.goals = previous;
+    if (state.goalEditId === goal.id) resetGoalForm();
+    renderGoals();
+  }
 });
 
 /* ================= 通用操作（编辑/删除/完成/规划/新增） ================= */
@@ -1674,6 +1852,7 @@ $("#profileResetBtn").addEventListener("click", async () => {
 /* 初始化 */
 async function init() {
   if (!location.hash) history.replaceState(null, "", "#/input");
+  loadGoals();
   showPage();
   await refresh().catch(() => {});
   refreshWx();
@@ -1683,6 +1862,7 @@ async function init() {
   await loadAiYou();
   setInterval(() => { refreshWx(); refreshAi(); }, 4000);
   setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 8000);
+  setInterval(() => { if (state.page === "goals") renderGoals(); }, 60000);
 }
 
 init();

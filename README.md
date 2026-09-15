@@ -14,6 +14,7 @@ RUC Agent 是一个本地运行的校园生活助手。你可以像聊天一样�
 - **先确认，再入库**：对话和 AI 识别结果以“待采纳”卡片展示，可选择加入日程、加入待办或忽略。
 - **日程与待办分流**：固定时间事项进入日程；只有截止时间或暂时无法排期的任务进入待办池。
 - **跨日自动顺延**：今天之前仍未完成的普通日程会自动转入待办池等待重新规划；导入课表生成的课程不会顺延。
+- **长期目标**：记录项目名称和截止时间，查看实时倒数、临期与逾期状态，并支持排序和本地持久化。
 - **选择性规划**：结合截止时间、空闲时段、24 小时精力曲线和当前负载，只推荐现在值得规划的任务。
 - **风险与冲突提示**：识别时间重叠、排期晚于截止时间、能量超载和低完成概率，并给出拆分或降标建议。
 - **反馈闭环**：任务完成后可标记“轻松 / 正常 / 吃力”，系统用反馈校准后续时段的精力估计。
@@ -30,6 +31,7 @@ RUC Agent 是一个本地运行的校园生活助手。你可以像聊天一样�
 | 计划 | 查看精力曲线、排期建议、完成概率和挡箭牌 |
 | 日程 | 按天查看时间轴，添加或拖动事项，检查冲突 |
 | 待办 | 管理未排期任务、截止时间、优先级和完成反馈 |
+| 长期目标 | 管理长期项目截止时间、倒数状态和到期统计 |
 | 我的 | 导入课程表，配置 AI、微信监听、画像和本地数据 |
 
 ## 快速开始
@@ -133,7 +135,7 @@ winget install --id JRSoftware.InnoSetup -e
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-产物位于 `dist\installer\RUC-Agent-Setup-1.0.1.exe`，对应校验文件为 `dist\installer\SHA256SUMS-1.0.1.txt`。构建脚本会先运行自动化测试，再对冻结后的程序执行静态页面与核心 API 冒烟验证。
+产物位于 `dist\installer\RUC-Agent-Setup-1.1.exe`，对应校验文件为 `dist\installer\SHA256SUMS-1.1.txt`。构建脚本会先运行自动化测试，再对冻结后的程序执行静态页面与核心 API 冒烟验证。
 
 当前安装包未配置 Authenticode 代码签名，首次运行时 Windows 可能显示 SmartScreen 提示。请先核对 Release 附带的 SHA-256 校验文件，再决定是否运行；正式公开分发前建议配置代码签名。
 
@@ -150,6 +152,8 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 | `user_memory.json` / `user_evidence.json` | 长期记忆与行为证据 |
 | `planner_profile.json` / `planner_events.json` | 精力曲线与规划反馈 |
 | `wechat_config.json` / `wechat_activity.json` / `wechat_state.json` | 微信配置、活动和处理状态 |
+
+长期目标保存在当前浏览器的 `localStorage` 中，不写入服务器数据目录。清除浏览器站点数据会同时清除长期目标。
 
 `data/` 已被 `.gitignore` 忽略。这个目录可能包含 API Key、微信状态和个人日程，请勿提交到 Git、粘贴到 Issue，或作为调试附件公开。
 
