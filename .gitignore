@@ -31,6 +31,8 @@ dist/
 Thumbs.db
 desktop.ini
 
-# 浏览器自动化临时用户目录：可能包含登录、Cookie 和浏览记录
-materials/_edgetmp/
-materials/edge-profile/
+# 运行时数据的备份/导出副本：可能含 API Key、聊天记录和个人日程，严禁提交
+*.bak.json
+
+# 测试运行输出
+tests/run_result.txt

@@ -8,9 +8,16 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+import tempfile
 import uuid
 import unittest
 from datetime import date, timedelta
+
+# 测试隔离：必须在导入 app.* 之前生效，否则 app.paths 会把数据目录锁到仓库 data/。
+os.environ.setdefault(
+    "RUC_AGENT_DATA_DIR",
+    os.path.join(tempfile.gettempdir(), "ruc-agent-tests", "plan_modules"),
+)
 
 from app.ai import chat as ai_chat
 from app.ai import memory as ai_memory

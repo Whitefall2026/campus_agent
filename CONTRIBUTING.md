@@ -52,5 +52,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ## 注意事项
 
 - `data/` 目录被 `.gitignore` 忽略：里面是本地运行数据，包含 **API Key、微信账号状态和个人日程**，任何情况下都不要提交，也不要在 Issue/PR 里贴出来。
+- 路演 PPT、海报、演示截图等比赛交付物不要提交到代码仓库：它们不属于产品代码，且会让仓库体积迅速膨胀；需要共享时放 Release 附件或独立仓库。
+- 不要提交运行时数据的备份副本（例如把 `data/ai_pending.json` 拷一份放进仓库）；`.gitignore` 已忽略 `*.bak.json`，手工拷贝时请仍按 `data/` 的标准对待。
 - `wechatauto-replica-main/` 是第三方库 `wechatauto-replica`（Apache-2.0）的随仓库副本，用于「微信自动提取」功能；除非修依赖本身的 Bug，否则不要改动它。
 - 所有源码和文档统一为 UTF-8 编码；换行由 `.gitattributes` 统一处理，不要在编辑器里手动改行尾格式。

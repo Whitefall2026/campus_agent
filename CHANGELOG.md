@@ -1,5 +1,12 @@
 # 更新日志
 
+## 仓库整理 - 2026-09-17
+
+- 移除误入代码仓库的路演材料（`deliverables/`、`materials/`、根目录的 PPT 与设计工程文件），以及测试输出日志 `tests/run_result.txt`。
+- 校徽源文件由根目录移至 `assets/brand/ruc-logo.png`，README 界面截图移至 `docs/images/chat-preview.png`。
+- `.gitignore` 增加 `*.bak.json` 等规则，防止运行时数据的备份副本被提交。
+- 测试在导入应用模块前把数据目录指向临时目录，不再读写本机 `data/`。
+
 ## 1.1 - 2026-09-15
 
 - 新增长期目标页面，支持目标添加、编辑、删除和截止时间排序。

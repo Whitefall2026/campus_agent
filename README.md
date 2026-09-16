@@ -6,7 +6,7 @@ RUC Agent 是一个本地运行的校园生活助手。你可以像聊天一样�
 
 核心后端仅使用 Python 标准库，前端使用原生 HTML、CSS 和 JavaScript。即使不配置大模型，日程提取、待办管理、冲突检查和规则排期也可以使用；配置 AI 后可获得更复杂的语义理解、任务拆解、画像分析和自然语言建议。
 
-![RUC Agent 对话与待采纳界面](materials/shot_input.png)
+![RUC Agent 对话与待采纳界面](docs/images/chat-preview.png)
 
 ## 核心体验
 
@@ -173,9 +173,11 @@ app/
 └─ paths.py                  静态资源和用户数据路径
 app/version.py               应用版本号
 static/                      原生前端页面、样式和交互脚本
+assets/brand/                校徽等品牌源文件（用于生成 Windows 图标）
 tests/                       单元测试与真实 HTTP API 集成测试
 packaging/                   PyInstaller 与 Inno Setup 构建脚本
 docs/                        设计与技术文档
+docs/images/                 README 使用的界面截图
 wechatauto-replica-main/     微信能力依赖的随仓库副本
 ```
 

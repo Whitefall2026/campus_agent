@@ -3,7 +3,7 @@
 
 - 新增任务（含规划字段）→ 能量规划+风险 → 采纳排程/顺延 → 挡箭牌 →
   完成反馈（EMA）→ 拖拽记录 → 状态回归；
-- 测试前后备份/恢复 data/ 下被触碰的文件，绝不污染本地数据；
+- 测试运行在独立的临时数据目录中，不读写本机 data/；
 - 运行：python -m unittest discover -s tests -v
 """
 from __future__ import annotations
@@ -12,6 +12,7 @@ import contextlib
 import json
 import os
 import shutil
+import tempfile
 import threading
 import unittest
 import urllib.error
@@ -19,6 +20,12 @@ import urllib.request
 from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
+
+# 测试隔离：必须在导入 app.* 之前生效，否则 app.paths 会把数据目录锁到仓库 data/。
+os.environ.setdefault(
+    "RUC_AGENT_DATA_DIR",
+    os.path.join(tempfile.gettempdir(), "ruc-agent-tests", "api"),
+)
 
 from app.paths import DATA_DIR
 from app.ai import gateway as ai_gateway

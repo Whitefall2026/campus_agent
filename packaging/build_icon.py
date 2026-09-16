@@ -8,7 +8,7 @@ from PIL import Image
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SOURCE = PROJECT_ROOT / "renmin-university-of-china-logo.png"
+SOURCE = PROJECT_ROOT / "assets" / "brand" / "ruc-logo.png"
 OUTPUT = PROJECT_ROOT / "packaging" / "app_icon.ico"
 ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
 

@@ -5,6 +5,12 @@ import os
 import tempfile
 import unittest
 
+# 测试隔离：必须在导入 app.* 之前生效，否则 app.paths 会把数据目录锁到仓库 data/。
+os.environ.setdefault(
+    "RUC_AGENT_DATA_DIR",
+    os.path.join(tempfile.gettempdir(), "ruc-agent-tests", "storage"),
+)
+
 from app.core import storage
 from app.core.storage import rollover_unfinished_schedules
 
