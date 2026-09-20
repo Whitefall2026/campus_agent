@@ -231,10 +231,18 @@ def _find_duration(text: str) -> tuple[int | None, str | None]:
             return int(round(float(g)))
         return _cn_num(g)
 
+    def hours_minutes(g: str | None) -> int:
+        """小时表达式转分钟：小数小时先乘 60 再取整，1.5 小时 -> 90 而非 120。"""
+        if g is None:
+            return 0
+        if "." in g:
+            return int(round(float(g) * 60))
+        return (conv(g) or 0) * 60
+
     checks = [
         (re.compile(r"([一二两三四五六七八九十\d]+)\s*(?:个)?半小时"), lambda m: (conv(m.group(1)) or 0) * 60 + 30),
         (re.compile(r"半小时"), 30),
-        (re.compile(r"(\d+(?:\.\d+)?|" + CN_PAT + r")\s*(?:个)?小时"), lambda m: (conv(m.group(1)) or 0) * 60),
+        (re.compile(r"(\d+(?:\.\d+)?|" + CN_PAT + r")\s*(?:个)?小时"), lambda m: hours_minutes(m.group(1))),
         (re.compile(r"(\d+|[一二三四五六七八九十两]{1,3})\s*(?:分钟|min(?:s)?)"), lambda m: conv(m.group(1)) or 0),
         (re.compile(r"(\d+(?:\.\d+)?|" + CN_PAT + r")\s*节课"), lambda m: (conv(m.group(1)) or 0) * 45),
     ]

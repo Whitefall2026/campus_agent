@@ -241,7 +241,8 @@ def plan_with_risk(plan: dict, stats: dict | None = None,
         e["probability"] = s["probability"]
         e["risk"] = bool(s["risk"])
         merged = {**s, "deliverable": e.get("deliverable")}
-        e["risk_copy"] = risk_copy(merged) if s["risk"] else None
+        # 传真实的模拟完成率，否则文案会恒定显示“约 50%”。
+        e["risk_copy"] = risk_copy(merged, rate=s["probability"]) if s["risk"] else None
         entries.append(e)
     plan["entries"] = entries
     plan["risk_sim"] = {"n": max(1, int(n)), "seed": seed}

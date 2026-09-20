@@ -32,6 +32,8 @@ PLAN_START = energy_mod.PLAN_DAY_START
 PLAN_END = energy_mod.PLAN_DAY_END
 STEP = 30
 DEFAULT_DEADLINE_TIME = "23:59"
+# 优先级 → 排序权重（越小越优先）
+PRIORITY_RANK = {"high": 0, "medium": 1, "low": 2}
 
 BLOCKED_COPY = "「{title}」今日未启动，建议明早优先处理，或评估是否需降低完成标准。"
 TOLERANCE_COPY = (
@@ -91,7 +93,8 @@ def _occupied_at(minute: int, busy: list) -> bool:
     return any(s <= minute < e for s, e in busy)
 
 
-def free_runs(todos: list[dict], day: date, include_courses: bool = True) -> list[dict]:
+def free_runs(todos: list[dict], day: date, include_courses: bool = True,
+              profile: dict | None = None) -> list[dict]:
     """把一天的 30 分钟格子切分成连续空闲块。
 
     返回 [{start: 分钟, end: 分钟, points: 整块可提供能量}]。
@@ -103,7 +106,9 @@ def free_runs(todos: list[dict], day: date, include_courses: bool = True) -> lis
     while m < PLAN_END:
         free = not _occupied_at(m, busy)
         if free and cur is None:
-            cur = {"start": m, "end": m}
+            # 单个 30 分钟空闲格也必须有 end = 起点 + STEP，
+            # 否则未与下一格连续时 end == start（0 长度、0 能量）。
+            cur = {"start": m, "end": m + STEP}
         elif free:
             cur["end"] = m + STEP
         elif cur is not None:
@@ -113,7 +118,8 @@ def free_runs(todos: list[dict], day: date, include_courses: bool = True) -> lis
     if cur is not None:
         runs.append(cur)
     for r in runs:
-        r["points"] = energy_mod.block_points(r["start"], r["end"] - r["start"])
+        r["points"] = energy_mod.block_points(
+            r["start"], r["end"] - r["start"], profile)
     return runs
 
 
@@ -159,13 +165,14 @@ def _task_key(t: dict) -> tuple:
     """排序：截止（无截止最后）→ 耗能降序 → 硬线优先 → 优先级 → 创建时间。"""
     dl = str(t.get("deadline") or "9999-99-99")
     dlt = str(t.get("deadline_time") or DEFAULT_DEADLINE_TIME)
-    prio = {"high": 0, "medium": 1, "low": 2}.get(str(t.get("priority") or "medium"), 1)
+    prio = PRIORITY_RANK.get(str(t.get("priority") or "medium"), 1)
     hard = 0 if t.get("deadline_type") == "hard" else 1
     return (dl, dlt, -int(t.get("energy_cost") or 1), hard, prio,
             str(t.get("created_at") or ""))
 
 
-def _carve_runs(runs: list[dict], start: int, end: int) -> list:
+def _carve_runs(runs: list[dict], start: int, end: int,
+                profile: dict | None = None) -> list:
     """从空闲块中挖掉 [start,end)，返回新的空闲块列表。"""
     out = []
     for r in runs:
@@ -178,7 +185,7 @@ def _carve_runs(runs: list[dict], start: int, end: int) -> list:
             out.append(dict(r, start=end))
     for r in out:
         r["points"] = energy_mod.block_points(
-            r["start"], r["end"] - r["start"])
+            r["start"], r["end"] - r["start"], profile)
     return out
 
 
@@ -226,8 +233,13 @@ def plan_day(
     """
     day = day or date.today()
     iso = day.isoformat()
-    prof = profile or energy_mod.default_profile()
-    runs = free_runs(todos, day, include_courses=include_courses)
+    # 未显式传入时读取持久化的用户精力曲线，否则「轻松/吃力」校准永远不生效。
+    prof = profile or energy_mod.load_profile()
+    runs = free_runs(todos, day, include_courses=include_courses, profile=prof)
+    # AI 落位会用 _carve_runs 从 runs 中挖走已占时段，而 used_pts 仍计入
+    # AI 条目；因此先把「全天空闲总量」留存，作为 budget 的分母，
+    # 避免 planned_ratio 被高估（甚至 >1）而误触 load_high。
+    day_points = sum(r["points"] for r in runs)
     if candidate_ids:
         idset = {str(x) for x in candidate_ids}
         raw = [
@@ -312,7 +324,7 @@ def plan_day(
                     "level": "tolerance",
                     "copy": TOLERANCE_COPY.format(cost=x, title=task.get("title")),
                 })
-            runs = _carve_runs(runs, start_min, end_min)
+            runs = _carve_runs(runs, start_min, end_min, profile=prof)
             ai_done.add(tid)
 
     remain = [c for c in cands if str(c["id"]) not in ai_done]
@@ -362,15 +374,14 @@ def plan_day(
             break
 
     # —— 预算统计 ——
-    total_pts = sum(r["points"] for r in runs)
     used_pts = sum(energy_mod.block_points(
         fields.hm_to_min(e["start"]), e["duration_min"], prof) for e in entries)
     budget = {
         "date": iso,
         "free_runs": len(runs),
-        "available_points": round(total_pts, 2),
+        "available_points": round(day_points, 2),
         "planned_points": round(used_pts, 2),
-        "planned_ratio": round(used_pts / total_pts, 3) if total_pts else 0.0,
+        "planned_ratio": round(used_pts / day_points, 3) if day_points else 0.0,
     }
 
     # 相邻的休息/机动格子合并成整段（避免逐格刷屏）
@@ -391,15 +402,9 @@ def plan_day(
     )
 
     for t in remain:
-        if t.get("deadline_type") == "hard":
-            warnings.append({
-                "task_id": t.get("id"),
-                "title": t.get("title"),
-                "level": "blocked",
-                "copy": BLOCKED_COPY.format(title=t.get("title")),
-            })
-        elif not load_high:
-            # 负载不高但实在没塞进去：同样进“明日优先”，不自动顺延
+        # 硬线任务无论负载高低都提示阻塞；软线仅在负载不高（未被自动顺延时）
+        # 才进「明日优先」提示——两类分支文案一致，合并处理。
+        if t.get("deadline_type") == "hard" or not load_high:
             warnings.append({
                 "task_id": t.get("id"),
                 "title": t.get("title"),
@@ -420,7 +425,7 @@ def plan_day(
             str(t.get("title")) for t in blocked_hard[:2]
         ) or "硬线安排"
         blocked_soft.sort(key=lambda t: (
-            {"high": 0, "medium": 1, "low": 2}.get(str(t.get("priority") or "medium"), 1),
+            PRIORITY_RANK.get(str(t.get("priority") or "medium"), 1),
             str(t.get("created_at") or ""),
         ))
         for t in blocked_soft:
@@ -476,7 +481,7 @@ def plan_day(
 # ---------------------------------------------------------------------------
 def apply_placements(todos: list[dict], plan: dict,
                      task_ids: list | None = None,
-                     data_dir: str | None = None) -> dict:
+                     data_dir: str | None = None) -> tuple[list, list]:
     """把方案里的若干任务落库：待办 → 日程（date/time/end_time）。
 
     与页面「规划到日程」行为一致；返回 (新列表, 应用明细)。
@@ -504,7 +509,7 @@ def apply_placements(todos: list[dict], plan: dict,
 
 def apply_deferrals(todos: list[dict], plan: dict,
                     task_ids: list | None = None,
-                    data_dir: str | None = None) -> dict:
+                    data_dir: str | None = None) -> tuple[list, list]:
     """把方案里的软线顺延落库：deadline 顺延 1 天、状态置 deferred。
 
     返回 (新列表, 已应用明细)。
@@ -541,7 +546,7 @@ def apply_deferrals(todos: list[dict], plan: dict,
 
 def record_move(todos: list[dict], task_id: str, date_s: str,
                 time_s: str | None, end_time_s: str | None = None,
-                data_dir: str | None = None) -> dict:
+                data_dir: str | None = None) -> tuple[list, dict | None]:
     """用户拖拽调整（偏好记录）：返回 (新列表, 记录)。"""
     todos = [dict(t) for t in todos]
     t = next((x for x in todos if str(x.get("id")) == task_id), None)
@@ -551,7 +556,9 @@ def record_move(todos: list[dict], task_id: str, date_s: str,
     t["date"] = date_s
     t["time"] = time_s
     t["end_time"] = end_time_s or t.get("end_time")
-    t["kind"] = kinds.valid_kind(t.get("kind")) or kinds.KIND_SCHEDULE
+    # 拖到某天即成为日程：必须强制改写 kind，否则会留下「kind=todo 却带 date」
+    # 的夹生数据，导致它既不算日程（不占时段）也不回候选池（有 date 被过滤）。
+    t["kind"] = kinds.KIND_SCHEDULE
     record = {
         "task_id": task_id,
         "title": t.get("title"),

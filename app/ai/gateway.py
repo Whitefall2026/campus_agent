@@ -17,7 +17,6 @@ import json
 import os
 import re
 import threading
-import time
 import uuid
 import urllib.error
 import urllib.request
@@ -112,6 +111,17 @@ _LOCK = threading.RLock()
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
 
+# 上游错误报文里可能夹带密钥/令牌，回显前先脱敏（只遮蔽敏感片段，保留可诊断信息）
+_SECRET_RE = re.compile(
+    r"(sk-[A-Za-z0-9_\-]{4,}|Bearer\s+\S+|api[_-]?key\s*[=:]\s*\S+)",
+    re.IGNORECASE,
+)
+
+
+def _redact_secrets(text: str) -> str:
+    """把错误文本里的疑似密钥/令牌替换为占位符，避免回显泄露。"""
+    return _SECRET_RE.sub("[已脱敏]", str(text or ""))
+
 
 class AiGatewayError(RuntimeError):
     pass
@@ -135,7 +145,7 @@ def _paths(data_dir: str | None = None):
 
 
 def _seen_key(chat: str, seq) -> str:
-    return "%s|%s" % (str(chat or ""), int(seq or 0))
+    return "%s|%s" % (str(chat or ""), _to_int(seq))
 
 
 def is_ai_seen(chat: str, seq, data_dir: str | None = None) -> bool:
@@ -298,7 +308,8 @@ def _chat_completion(cfg: dict, messages: list) -> str:
     except urllib.error.HTTPError as exc:
         snippet = ""
         try:
-            snippet = exc.read().decode("utf-8", errors="ignore")[:300]
+            snippet = _redact_secrets(
+                exc.read().decode("utf-8", errors="ignore")[:300])
         except Exception:
             pass
         raise AiGatewayError("AI 接口返回 HTTP %s：%s" % (exc.code, snippet))
@@ -379,7 +390,7 @@ def _msg_entry(msg: dict) -> dict:
     except (TypeError, ValueError, OSError):
         ts_iso = ""
     return {
-        "seq": int(msg.get("seq") or msg.get("sort_seq") or 0),
+        "seq": _to_int(msg.get("seq") or msg.get("sort_seq") or 0),
         "ts": ts_iso,
         "sender": str(msg.get("sender") or ""),
         "content": str(msg.get("content") or ""),
@@ -466,12 +477,19 @@ def _parse_items(content: str) -> list:
         if not fields.get("title"):
             continue
         out.append({
-            "seq": int(it.get("seq") or 0),
+            "seq": _to_int(it.get("seq") or 0),
             "fields": fields,
             "confidence": _to_float(it.get("confidence")),
             "reason": str(it.get("reason") or "").strip()[:200],
         })
     return out
+
+
+def _to_int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _to_float(v):

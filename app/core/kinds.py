@@ -99,9 +99,6 @@ def normalize_item(fields: dict | None, kind: str | None = None,
         f["end_time"] = None
         return f
 
-    # schedule：必须保留一个日期供时间轴展示；没有日期但有 time 时给提示，由用户补日期
-    if not f.get("date") and f.get("time") and not f.get("deadline"):
-        pass
     return f
 
 

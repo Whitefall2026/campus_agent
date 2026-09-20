@@ -24,7 +24,8 @@ except Exception:
 
 from app.core.extractor import parse_text
 from app.core.scheduler import build_state, slot_conflicts, suggest_slot
-from app.core.storage import load_todos, save_todos
+from app.core.storage import (goals_initialized, load_goals, load_todos,
+                              save_goals, save_todos, todos_transaction)
 from app.core import kinds
 from app.ai import gateway as ai_gateway
 from app.ai import chat as ai_chat
@@ -49,6 +50,97 @@ from app.planner import llm_copies as plan_llm
 _BROWSE_CACHE = {}   # (iso, todos_mtime) -> (ts, 浏览快照 payload)
 _DATE_PLANS = {}     # iso -> (生成时 todos_mtime, AI 排程 payload)
 _PLAN_TTL = 25
+
+_GOAL_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TIME_RE = re.compile(r"^\d{2}:\d{2}$")
+_MAX_BODY = 8 * 1024 * 1024  # 请求体上限 8MB
+# 课表导入走 base64，解码后 20MB 需约 26.7MB 请求体，单独放宽上限，
+# 否则声明支持的 20MB 永远无法到达（会被通用 8MB 上限提前 413）。
+_UPLOAD_MAX_BODY = 32 * 1024 * 1024
+_DATE_FIELDS = ("date", "deadline")
+_TIME_FIELDS = ("time", "end_time", "deadline_time")
+
+# 本服务只监听 127.0.0.1；校验 Host/Origin 防「跨站请求伪造」与 DNS rebinding。
+# 浏览器对同源的非 GET 请求也会带 Origin，故按本机白名单放行即可，
+# 而恶意页面带来的 Origin 必为外部站点，会被拒绝。
+_LOCAL_HOSTNAMES = {"127.0.0.1", "localhost", "::1", "[::1]"}
+
+
+class _PayloadTooLarge(Exception):
+    """请求体超过 Content-Length 上限，交给统一兜底返回 413。"""
+
+
+def _valid_date_str(v) -> bool:
+    """日期字段校验：允许空/None；否则须为 YYYY-MM-DD 且可被解析。"""
+    if v in (None, ""):
+        return True
+    s = str(v)
+    if not _GOAL_DATE_RE.match(s):
+        return False
+    try:
+        date.fromisoformat(s)
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_time_str(v) -> bool:
+    """时间字段校验：允许空/None；否则须匹配 HH:MM 且为合法时刻。
+
+    仅靠正则会放过 99:99，落库后会让下游 strptime 抛错，故同时校验范围。
+    """
+    if v in (None, ""):
+        return True
+    s = str(v)
+    if not _TIME_RE.match(s):
+        return False
+    try:
+        datetime.strptime(s, "%H:%M")
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_datetime_fields(fields: dict) -> str | None:
+    """校验待写入的日期/时间字段格式；非法时返回中文错误信息。"""
+    for k in _DATE_FIELDS:
+        if k in fields and not _valid_date_str(fields.get(k)):
+            return "%s 日期格式不正确（应为 YYYY-MM-DD）" % k
+    for k in _TIME_FIELDS:
+        if k in fields and not _valid_time_str(fields.get(k)):
+            return "%s 时间格式不正确（应为 HH:MM）" % k
+    return None
+
+
+def _clean_goals(raw) -> list[dict] | None:
+    """校验并归一化长期目标列表；格式非法时返回 None（由调用方返回 400）。"""
+    if not isinstance(raw, list):
+        return None
+    cleaned: list[dict] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            return None
+        gid = str(item.get("id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        deadline = str(item.get("deadline") or "").strip()
+        if not gid or not name or gid in seen:
+            return None
+        if not _GOAL_DATE_RE.match(deadline):
+            return None
+        try:
+            date.fromisoformat(deadline)
+        except ValueError:
+            return None
+        seen.add(gid)
+        created = str(item.get("createdAt") or item.get("created_at") or "").strip()
+        cleaned.append({
+            "id": gid[:64],
+            "name": name[:120],
+            "deadline": deadline,
+            "createdAt": created or datetime.now().isoformat(timespec="seconds"),
+        })
+    return cleaned
 
 
 def _ai_candidate_ids(todos: list, iso: str) -> list:
@@ -236,9 +328,12 @@ def _finalize_todo(todo: dict) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    timeout = 30  # 读写 socket 超时（秒），避免半开连接长期占用线程
 
     # ---- 基础工具 ----
     def _send(self, code: int, body: bytes, ctype: str):
+        # 一旦开始响应即视为“已发送”，供异常兜底避免二次写。
+        self._responded = True
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -250,19 +345,83 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self._send(code, body, "application/json; charset=utf-8")
 
-    def _read_body(self) -> dict:
+    def _safe(self, route):
+        """统一入口兜底：未捕获异常时返回 500 而不冒泡断开连接。"""
         try:
-            n = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(n) if n else b"{}"
-            data = json.loads(raw or b"{}")
-            return data if isinstance(data, dict) else {}
+            return route()
+        except _PayloadTooLarge:
+            self.close_connection = True
+            if not getattr(self, "_responded", False):
+                return self._json({"ok": False, "error": "请求体过大（上限 8MB）"}, 413)
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception:
+            import traceback
+            print("[handlers] 未处理异常:")
+            traceback.print_exc()
+            if not getattr(self, "_responded", False):
+                try:
+                    return self._json({"ok": False, "error": "服务器内部错误"}, 500)
+                except Exception:
+                    pass
+
+    def _local_guard(self) -> bool:
+        """拒绝来自非本机的变更类请求（防跨站 CSRF / DNS rebinding）。
+
+        浏览器发起的跨站请求一定带外部 Origin；同源请求的 Host/Origin 都是
+        本机地址。命令行/测试等客户端通常不带 Origin，Host 亦为本机，放行。
+        """
+        host = (self.headers.get("Host") or "").strip()
+        if host:
+            name = host.rsplit(":", 1)[0].strip("[]").lower() if host.count(":") else host.lower()
+            if name not in _LOCAL_HOSTNAMES:
+                return False
+        origin = (self.headers.get("Origin") or "").strip()
+        if origin:
+            try:
+                hostname = (urlparse(origin).hostname or "").lower()
+            except ValueError:
+                return False
+            if hostname not in _LOCAL_HOSTNAMES:
+                return False
+        return True
+
+    def _read_body(self, max_body: int | None = None) -> dict:
+        limit = _MAX_BODY if max_body is None else max_body
+        try:
+            n = int(self.headers.get("Content-Length", "0") or "0")
+        except (TypeError, ValueError):
+            n = 0
+        if n < 0:
+            n = 0
+        if n > limit:
+            # 不读取超大 body，关闭连接避免残留数据污染后续请求。
+            self.close_connection = True
+            raise _PayloadTooLarge()
+        if not n:
             return {}
+        try:
+            raw = self.rfile.read(n)
+        except Exception as exc:
+            print("[handlers] 读取请求体失败: %r" % (exc,))
+            return {}
+        try:
+            data = json.loads(raw or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            # 保持向后兼容（返回空 dict），但不再静默。
+            print("[handlers] 请求体 JSON 解析失败: %r" % (exc,))
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def _serve_static(self, path: str):
         rel = path.lstrip("/") or "index.html"
-        target = os.path.realpath(os.path.join(STATIC_DIR, rel))
-        if not target.startswith(os.path.realpath(STATIC_DIR)):
+        real_dir = os.path.realpath(STATIC_DIR)
+        target = os.path.realpath(os.path.join(real_dir, rel))
+        try:
+            inside = os.path.commonpath([target, real_dir]) == real_dir
+        except ValueError:  # 跨盘符/不同驱动器
+            inside = False
+        if not inside:
             return self._json({"ok": False, "error": "forbidden"}, 403)
         if os.path.isdir(target):
             target = os.path.join(target, "index.html")
@@ -408,9 +567,18 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- 路由 ----
     def do_GET(self):
+        return self._safe(self._route_get)
+
+    def _route_get(self):
         path = urlparse(self.path).path
         if path == "/api/state":
             return self._json(self._state())
+        if path == "/api/goals":
+            return self._json({
+                "ok": True,
+                "goals": load_goals(),
+                "initialized": goals_initialized(),
+            })
         if path == "/api/plan":
             qs = parse_qs(urlparse(self.path).query)
             day = self._day_from(
@@ -445,8 +613,21 @@ class Handler(BaseHTTPRequestHandler):
         self._serve_static(path)
 
     def do_POST(self):
+        return self._safe(self._route_post)
+
+    def _route_post(self):
         path = urlparse(self.path).path
-        body = self._read_body()
+        if not self._local_guard():
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        # 课表导入的 base64 体积较大，单独放宽上限，其余接口维持 8MB。
+        limit = _UPLOAD_MAX_BODY if path == "/api/courses/import" else _MAX_BODY
+        body = self._read_body(limit)
+        if path == "/api/goals":
+            goals = _clean_goals(body.get("goals"))
+            if goals is None:
+                return self._json({"ok": False, "error": "目标数据格式不正确"}, 400)
+            save_goals(goals)
+            return self._json({"ok": True, "goals": goals})
         if path == "/api/parse":
             text = body.get("text", "")
             parsed = parse_text(text)
@@ -459,7 +640,6 @@ class Handler(BaseHTTPRequestHandler):
             clashes = slot_conflicts(parsed, todos)
             return self._json({"ok": True, "parsed": parsed, "suggestion": suggestion, "clashes": clashes})
         if path == "/api/todos":
-            todos = load_todos()
             text = body.get("text", "")
             parsed0 = parse_text(text)
             todo = make_todo_from_text(text, body.get("kind")) if text else None
@@ -472,11 +652,10 @@ class Handler(BaseHTTPRequestHandler):
                         "error": "未识别到明确的日程日期，无法采纳到日程；请改选“待办”，之后可在待办页手动规划到某一天",
                     }, 400)
                 return self._json({"ok": False, "error": "无法从文本中提取事项"}, 400)
-            todos.append(todo)
-            save_todos(todos)
+            with todos_transaction() as todos:
+                todos.append(todo)
             return self._json({"ok": True, "todo": todo, "state": self._state()})
         if path == "/api/items":
-            todos = load_todos()
             title = str(body.get("title") or "").strip()
             if not title:
                 return self._json({"ok": False, "error": "缺少标题"}, 400)
@@ -484,6 +663,12 @@ class Handler(BaseHTTPRequestHandler):
             fields["title"] = title
             fields["category"] = str(body.get("category") or "other").strip()
             fields["priority"] = str(body.get("priority") or "medium").strip()
+            # 日期/时间必须与 PATCH、/api/plan/move 同口径校验：
+            # 非法值一旦落库会让 build_state 的 date.fromisoformat 抛错，
+            # 使 GET /api/state 永久 500 且无法自愈。
+            err = _validate_datetime_fields(fields)
+            if err:
+                return self._json({"ok": False, "error": err}, 400)
             for k in ("energy_cost", "deliverable", "deadline_type",
                       "ddl_float_days", "parent_id"):
                 v = _norm_planner_field(k, fields.get(k))
@@ -504,41 +689,44 @@ class Handler(BaseHTTPRequestHandler):
                 "status": "pending",
                 "created_at": datetime.now().isoformat(timespec="seconds"),
             })
-            todos.append(todo)
-            save_todos(todos)
+            with todos_transaction() as todos:
+                todos.append(todo)
             return self._json({"ok": True, "todo": todo, "state": self._state()})
         if path == "/api/seed":
-            todos = load_todos()
-            existing = {t.get("title") for t in todos}
             added = 0
-            for text in SAMPLE_TEXTS:
-                if added >= 3:
-                    break
-                todo = make_todo_from_text(text)
-                if todo and todo["title"] not in existing:
-                    todos.append(todo)
-                    existing.add(todo["title"])
-                    added += 1
-            save_todos(todos)
+            with todos_transaction() as todos:
+                existing = {t.get("title") for t in todos}
+                for text in SAMPLE_TEXTS:
+                    if added >= 3:
+                        break
+                    todo = make_todo_from_text(text)
+                    if todo and todo["title"] not in existing:
+                        todos.append(todo)
+                        existing.add(todo["title"])
+                        added += 1
             return self._json({"ok": True, "added": added, "state": self._state()})
         if path == "/api/clear":
-            todos = load_todos()
-            scope = str(body.get("scope") or "all").strip().lower()
-            if scope == "schedule":
-                todos = [
-                    t for t in todos
-                    if (kinds.valid_kind(t.get("kind")) or kinds.derive_kind(t))
-                    != kinds.KIND_SCHEDULE
-                ]
-            elif scope == "todo":
-                todos = [
-                    t for t in todos
-                    if (kinds.valid_kind(t.get("kind")) or kinds.derive_kind(t))
-                    != kinds.KIND_TODO
-                ]
-            else:
-                todos = []
-            save_todos(todos)
+            # scope 必须显式给出且在白名单内：缺失或拼错一律拒绝，
+            # 避免把 body 解析失败（= {}）误当成“清空全部”。
+            scope = str(body.get("scope") or "").strip().lower()
+            if scope not in ("all", "schedule", "todo"):
+                return self._json({
+                    "ok": False,
+                    "error": "scope 需为 all/schedule/todo",
+                }, 400)
+            target = {
+                "schedule": kinds.KIND_SCHEDULE,
+                "todo": kinds.KIND_TODO,
+            }.get(scope)
+            with todos_transaction() as todos:
+                if target is None:
+                    todos[:] = []
+                else:
+                    todos[:] = [
+                        t for t in todos
+                        if (kinds.valid_kind(t.get("kind")) or kinds.derive_kind(t))
+                        != target
+                    ]
             return self._json({"ok": True, "state": self._state()})
         if path == "/api/wechat/start":
             return self._json(WX_BRIDGE.start())
@@ -561,7 +749,10 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("api_key"):
                 cfg["api_key"] = str(body["api_key"]).strip()
             if "min_len" in body:
-                cfg["min_len"] = int(body["min_len"] or 10)
+                try:
+                    cfg["min_len"] = max(0, int(body["min_len"] or 10))
+                except (TypeError, ValueError):
+                    return self._json({"ok": False, "error": "min_len 需为整数"}, 400)
             if "require_time_word" in body:
                 cfg["require_time_word"] = bool(body["require_time_word"])
             public = ai_gateway.save_config(cfg)
@@ -716,30 +907,29 @@ class Handler(BaseHTTPRequestHandler):
                 },
             })
         if path == "/api/plan/apply":
-            # 采纳某天的能量规划：placements=排程、deferrals=软线顺延（可只给其一）
-            todos = load_todos()
+            # 采纳某天的能量规划：placements=排程、deferrals=软线顺延。
+            # 未给出的那一类按“空选择”处理，绝不能当成“全部应用”。
             day = self._day_from(body.get("date"), date.today())
             iso = day.isoformat()
-            cached = _DATE_PLANS.get(iso)
-            if cached is not None and cached[0] == _todos_mtime():
-                # 优先采纳页面展示的那份排程（含 AI 提议的具体时段），
-                # 避免重新计算时用另一套候选口径而采纳落空
-                plan0 = cached[1]["plan"]
-            else:
-                plan0 = plan_engine.plan_day(todos, day=day)
-            placements = body.get("placements")
-            deferrals = body.get("deferrals")
-            if placements is not None and not isinstance(placements, list):
+            placements = body.get("placements") or []
+            deferrals = body.get("deferrals") or []
+            if not isinstance(placements, list):
                 return self._json({"ok": False, "error": "placements 需为数组"}, 400)
-            if deferrals is not None and not isinstance(deferrals, list):
+            if not isinstance(deferrals, list):
                 return self._json({"ok": False, "error": "deferrals 需为数组"}, 400)
-            todos, applied_p = plan_engine.apply_placements(
-                todos, plan0,
-                task_ids=[str(x) for x in placements] if placements is not None else None)
-            todos, applied_d = plan_engine.apply_deferrals(
-                todos, plan0,
-                task_ids=[str(x) for x in deferrals] if deferrals is not None else None)
-            save_todos(todos)
+            cached = _DATE_PLANS.get(iso)
+            with todos_transaction() as todos:
+                if cached is not None and cached[0] == _todos_mtime():
+                    # 优先采纳页面展示的那份排程（含 AI 提议的具体时段），
+                    # 避免重新计算时用另一套候选口径而采纳落空
+                    plan0 = cached[1]["plan"]
+                else:
+                    plan0 = plan_engine.plan_day(todos, day=day)
+                updated, applied_p = plan_engine.apply_placements(
+                    todos, plan0, task_ids=[str(x) for x in placements])
+                updated, applied_d = plan_engine.apply_deferrals(
+                    updated, plan0, task_ids=[str(x) for x in deferrals])
+                todos[:] = updated
             _DATE_PLANS.pop(iso, None)
             return self._json({
                 "ok": True,
@@ -750,36 +940,49 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/plan/skip":
             # 用户今天跳过某条建议：当天不再重复提议，之后的日子恢复候选，
             # 由重新规划把它们安排到后续的时间段。
-            todos = load_todos()
             task_id = str(body.get("task_id") or "")
             day_s = str(body.get("date") or "")
-            todo = next((t for t in todos if t.get("id") == task_id), None)
-            if todo is None:
+            if day_s and not _valid_date_str(day_s):
+                return self._json({"ok": False, "error": "date 格式不正确（应为 YYYY-MM-DD）"}, 400)
+            found = False
+            with todos_transaction() as todos:
+                todo = next((t for t in todos if t.get("id") == task_id), None)
+                if todo is not None:
+                    found = True
+                    skipped = [str(x) for x in (todo.get("plan_skipped_dates") or [])]
+                    if day_s and day_s not in skipped:
+                        skipped.append(day_s)
+                    todo["plan_skipped_dates"] = skipped
+                    if "plan_offered_date" in todo:
+                        todo["plan_offered_date"] = None
+            if not found:
                 return self._json({"ok": False, "error": "事项不存在"}, 404)
-            skipped = [str(x) for x in (todo.get("plan_skipped_dates") or [])]
-            if day_s and day_s not in skipped:
-                skipped.append(day_s)
-            todo["plan_skipped_dates"] = skipped
-            if "plan_offered_date" in todo:
-                todo["plan_offered_date"] = None
-            save_todos(todos)
             if day_s:
                 _DATE_PLANS.pop(day_s, None)
             return self._json({"ok": True, "state": self._state()})
         if path == "/api/plan/move":
             # 用户拖拽/手动调整任务时间：落库并记录偏好
-            todos = load_todos()
             item_id = str(body.get("id") or "")
             if not item_id:
                 return self._json({"ok": False, "error": "缺少 id"}, 400)
-            todos, rec = plan_engine.record_move(
-                todos, item_id,
-                str(body.get("date") or ""),
-                body.get("time") or None,
-                body.get("end_time") or None)
+            move_date = str(body.get("date") or "")
+            if not move_date or not _valid_date_str(move_date):
+                return self._json({"ok": False, "error": "date 格式不正确（应为 YYYY-MM-DD）"}, 400)
+            err = _validate_datetime_fields({
+                "time": body.get("time"), "end_time": body.get("end_time"),
+            })
+            if err:
+                return self._json({"ok": False, "error": err}, 400)
+            rec = None
+            with todos_transaction() as todos:
+                updated, rec = plan_engine.record_move(
+                    todos, item_id, move_date,
+                    body.get("time") or None,
+                    body.get("end_time") or None)
+                if rec is not None:
+                    todos[:] = updated
             if rec is None:
                 return self._json({"ok": False, "error": "事项不存在"}, 404)
-            save_todos(todos)
             return self._json({"ok": True, "record": rec, "state": self._state()})
         if path == "/api/shield":
             # 智能挡箭牌：粘贴外部任务 → 负载评估 + 建议回复（AI 可用时用 LLM 润色）
@@ -863,23 +1066,22 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/api/decompose/accept":
             # 采纳拆解结果：把缓存的子任务写入待办池（parent_id 关联父任务）
-            todos = load_todos()
             item_id = str(body.get("id") or "")
-            todo = next((t for t in todos if t.get("id") == item_id), None)
-            if todo is None:
-                return self._json({"ok": False, "error": "事项不存在"}, 404)
-            subs = plan_decompose.cached_subtasks(item_id)
-            if not subs:
-                return self._json({
-                    "ok": False,
-                    "error": "拆解结果已过期或不存在，请先重新拆解",
-                }, 400)
             created = []
-            for s in subs:
-                child = plan_decompose.child_todo(todo, s)
-                todos.append(child)
-                created.append(child)
-            save_todos(todos)
+            with todos_transaction() as todos:
+                todo = next((t for t in todos if t.get("id") == item_id), None)
+                if todo is None:
+                    return self._json({"ok": False, "error": "事项不存在"}, 404)
+                subs = plan_decompose.cached_subtasks(item_id)
+                if not subs:
+                    return self._json({
+                        "ok": False,
+                        "error": "拆解结果已过期或不存在，请先重新拆解",
+                    }, 400)
+                for s in subs:
+                    child = plan_decompose.child_todo(todo, s)
+                    todos.append(child)
+                    created.append(child)
             plan_decompose.cache_subtasks(item_id, [])  # 一次性采纳，作废缓存
             return self._json({
                 "ok": True,
@@ -939,33 +1141,32 @@ class Handler(BaseHTTPRequestHandler):
                 ai_chat.mark_item_outcome(item_id, "rejected")
                 return self._json({"ok": True, "state": self._state()})
             # accept：按用户选择写入日程或待办
-            todos = load_todos()
-            chat = str(item.get("chat_username") or "")
-            seq = int(item.get("seq") or 0)
-            title = str((item.get("fields") or {}).get("title") or "").strip()
-            exists = any(
-                t.get("wx_chat") == chat
-                and int(t.get("wx_seq") or 0) == seq
-                and str(t.get("title") or "").strip() == title
-                for t in todos
-            )
             want = kinds.valid_kind(body.get("kind"))
-            if not exists:
-                todo = ai_gateway.make_ai_todo(item, source=item.get("source", "wechat_ai"))
-                if want:
-                    todo = kinds.normalize_item(
-                        todo,
-                        kind=want,
-                        raw=todo.get("raw") or "",
-                    )
-                    if want == kinds.KIND_SCHEDULE and not todo.get("date"):
-                        return self._json({
-                            "ok": False,
-                            "error": "该结果没有明确日期，无法采纳到日程；请采纳到待办，再到待办页手动规划到某一天",
-                        }, 400)
-                todo = _finalize_todo(todo)
-                todos.append(todo)
-                save_todos(todos)
+            with todos_transaction() as todos:
+                chat = str(item.get("chat_username") or "")
+                seq = int(item.get("seq") or 0)
+                title = str((item.get("fields") or {}).get("title") or "").strip()
+                exists = any(
+                    t.get("wx_chat") == chat
+                    and int(t.get("wx_seq") or 0) == seq
+                    and str(t.get("title") or "").strip() == title
+                    for t in todos
+                )
+                if not exists:
+                    todo = ai_gateway.make_ai_todo(item, source=item.get("source", "wechat_ai"))
+                    if want:
+                        todo = kinds.normalize_item(
+                            todo,
+                            kind=want,
+                            raw=todo.get("raw") or "",
+                        )
+                        if want == kinds.KIND_SCHEDULE and not todo.get("date"):
+                            return self._json({
+                                "ok": False,
+                                "error": "该结果没有明确日期，无法采纳到日程；请采纳到待办，再到待办页手动规划到某一天",
+                            }, 400)
+                    todo = _finalize_todo(todo)
+                    todos.append(todo)
             ai_gateway.remove_pending(item_id)
             accepted_kind = (
                 want
@@ -977,57 +1178,78 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": False, "error": "not found"}, 404)
 
     def do_PATCH(self):
+        return self._safe(self._route_patch)
+
+    def _route_patch(self):
+        if not self._local_guard():
+            return self._json({"ok": False, "error": "forbidden"}, 403)
         m = re.fullmatch(r"/api/todos/([^/]+)", urlparse(self.path).path)
         if not m:
             return self._json({"ok": False, "error": "not found"}, 404)
         body = self._read_body()
-        todos = load_todos()
-        todo = next((t for t in todos if t.get("id") == m.group(1)), None)
-        if todo is None:
-            return self._json({"ok": False, "error": "事项不存在"}, 404)
-        was_done = todo.get("status") == "done"
-        for k, v in body.items():
-            if k not in ALLOWED_FIELDS:
-                continue
-            if k in ("date", "time", "end_time", "deadline", "deadline_time") and v in (None, ""):
-                v = None
-            if k == "status" and v not in ("pending", "done", "deferred"):
-                continue
-            if k == "kind":
-                v = kinds.valid_kind(v) or todo.get("kind")
-                if not v:
+        err = _validate_datetime_fields(body)
+        if err:
+            return self._json({"ok": False, "error": err}, 400)
+        result = {"todo": None, "was_done": False}
+        with todos_transaction() as todos:
+            idx = next((i for i, t in enumerate(todos) if t.get("id") == m.group(1)), None)
+            if idx is None:
+                return self._json({"ok": False, "error": "事项不存在"}, 404)
+            todo = todos[idx]
+            result["was_done"] = todo.get("status") == "done"
+            for k, v in body.items():
+                if k not in ALLOWED_FIELDS:
                     continue
-            if k == "duration_min" and not isinstance(v, int):
-                continue
-            if k in ("energy_cost", "deliverable", "deadline_type",
-                     "ddl_float_days", "parent_id"):
-                v = _norm_planner_field(k, v)
-                if v is _SKIP_FIELD:
+                if k in ("date", "time", "end_time", "deadline", "deadline_time") and v in (None, ""):
+                    v = None
+                if k == "status" and v not in ("pending", "done", "deferred"):
                     continue
-            todo[k] = v
-            if k == "date" and not v:
-                todo["time"] = None
-                todo["end_time"] = None
-        todo = _finalize_todo(kinds.normalize_item(
-            todo,
-            kind=todo.get("kind"),
-            raw=todo.get("raw") or todo.get("title") or "",
-        ))
-        if todo.get("status") == "done" and not was_done:
+                if k == "kind":
+                    v = kinds.valid_kind(v) or todo.get("kind")
+                    if not v:
+                        continue
+                if k == "duration_min" and (not isinstance(v, int) or v <= 0):
+                    continue
+                if k in ("energy_cost", "deliverable", "deadline_type",
+                         "ddl_float_days", "parent_id"):
+                    v = _norm_planner_field(k, v)
+                    if v is _SKIP_FIELD:
+                        continue
+                todo[k] = v
+                if k == "date" and not v:
+                    todo["time"] = None
+                    todo["end_time"] = None
+            # 归一化结果必须回写列表，否则响应（归一化后）与落盘（未归一化）不一致。
+            finalized = _finalize_todo(kinds.normalize_item(
+                todo,
+                kind=todo.get("kind"),
+                raw=todo.get("raw") or todo.get("title") or "",
+            ))
+            todos[idx] = finalized
+            result["todo"] = finalized
+        todo = result["todo"]
+        if todo.get("status") == "done" and not result["was_done"]:
             plan_risk.record_done(todo)
-        save_todos(todos)
         return self._json({"ok": True, "todo": todo, "state": self._state()})
 
     def do_DELETE(self):
+        return self._safe(self._route_delete)
+
+    def _route_delete(self):
+        if not self._local_guard():
+            return self._json({"ok": False, "error": "forbidden"}, 403)
+        # 消费请求体：HTTP/1.1 keep-alive 下未读字节会被当成下一个请求解析。
+        self._read_body()
         m = re.fullmatch(r"/api/todos/([^/]+)", urlparse(self.path).path)
         if not m:
             return self._json({"ok": False, "error": "not found"}, 404)
-        todos = load_todos()
-        before = len(todos)
-        todos = [t for t in todos if t.get("id") != m.group(1)]
-        if len(todos) == before:
+        removed = False
+        with todos_transaction() as todos:
+            before = len(todos)
+            todos[:] = [t for t in todos if t.get("id") != m.group(1)]
+            removed = len(todos) != before
+        if not removed:
             return self._json({"ok": False, "error": "事项不存在"}, 404)
-        save_todos(todos)
         return self._json({"ok": True, "state": self._state()})
 
     def log_message(self, fmt, *args):

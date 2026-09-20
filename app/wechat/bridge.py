@@ -19,7 +19,6 @@ import importlib.util
 import json
 import os
 import queue
-import re
 import subprocess
 import sys
 import threading
@@ -30,7 +29,9 @@ from datetime import datetime
 from app.ai import gateway as ai_gateway
 from app.core.extractor import parse_text
 from app.core import kinds
-from app.core.storage import rollover_unfinished_schedules
+# 与 storage.py 共用同一把 todos 文件锁，避免两个模块各自读-改-写时丢更新。
+from app.core.storage import (TODOS_LOCK, StorageError,
+                              rollover_unfinished_schedules)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -184,22 +185,32 @@ class WeChatBridge:
     # todos 读写（与 storage.py 保持一致的原子写）
     # ------------------------------------------------------------------
     def _load_todos(self) -> list:
-        try:
-            with open(self.todo_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data if isinstance(data, list) else []
-        except (OSError, json.JSONDecodeError):
+        if not os.path.exists(self.todo_file):
             return []
+        try:
+            with open(self.todo_file, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            # 读取失败不等于“没有待办”：交给调用方放弃本次入库，避免整表覆盖。
+            raise StorageError(str(exc))
+        return data if isinstance(data, list) else []
 
     def _save_todos(self, todos: list) -> None:
         # 微信监听线程也可能是跨日后的第一个写入方；写入前执行同一套顺延规则，
         # 避免它把尚未转换的旧日程重新覆盖回 todos.json。
         rollover_unfinished_schedules(todos)
         os.makedirs(os.path.dirname(self.todo_file), exist_ok=True)
-        tmp = self.todo_file + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(todos, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self.todo_file)
+        tmp = f"{self.todo_file}.{uuid.uuid4().hex}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(todos, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self.todo_file)
+        finally:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------------
     # 文件读写（全部在锁内调用或本身加锁）
@@ -800,15 +811,22 @@ class WeChatBridge:
             "wx_local_id": msg.get("local_id"),
             "wx_ts": msg.get("create_time"),
         }
+        try:
+            # 与 storage 的 load/save_todos 共用同一把锁，整段读-改-写保持互斥，
+            # 避免 HTTP 线程与本线程互相用旧快照整表覆盖。
+            with TODOS_LOCK:
+                todos = self._load_todos()
+                if any(
+                    t.get("wx_chat") == username and t.get("wx_seq") == seq
+                    for t in todos
+                ):
+                    return "duplicate"
+                todos.append(todo)
+                self._save_todos(todos)
+        except StorageError as exc:
+            self._info("待办文件不可读，已跳过本次入库：%s" % exc)
+            return "error"
         with self._lock:
-            todos = self._load_todos()
-            if any(
-                t.get("wx_chat") == username and t.get("wx_seq") == seq
-                for t in todos
-            ):
-                return "duplicate"
-            todos.append(todo)
-            self._save_todos(todos)
             self._state["added_total"] = int(self._state.get("added_total", 0)) + 1
         when = f"{norm.get('date') or ''} {norm.get('time') or ''}".strip()
         self._log_activity(

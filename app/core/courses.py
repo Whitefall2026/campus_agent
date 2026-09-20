@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import threading
 import uuid
 import xml.etree.ElementTree as ET
@@ -88,9 +89,12 @@ def _read_sheets(path: str) -> list:
 
         out = []
         for name, rid in sheets:
-            target = rel_map.get(rid, "")
+            # Target 可能是相对路径（worksheets/sheet1.xml）或绝对路径（/xl/...）
+            target = (rel_map.get(rid) or "").lstrip("/")
             if not target.startswith("xl/"):
-                target = "xl/" + target.lstrip("/")
+                target = "xl/" + target
+            if target not in names:
+                raise ValueError(f"课表缺少工作表文件：{target}")
             root = ET.fromstring(z.read(target))
             rows = []
             for row in root.iter(_M + "row"):
@@ -235,7 +239,6 @@ def _parse_sheet(sheet: dict) -> tuple[dict, list[dict]]:
     # 相邻行的同一课程单元格视为跨大节的同一条课，合并时首行起/末行止
     active = {}   # weekday -> {text, first_row, last_row}
     row_times = []
-    row_idx_of = {}
     class_rows = []
     for i in range(header_row_idx + 1, len(rows)):
         row = rows[i]
@@ -244,7 +247,6 @@ def _parse_sheet(sheet: dict) -> tuple[dict, list[dict]]:
         if not tm and not has_day_content:
             continue
         class_rows.append(row)
-        row_idx_of[len(class_rows) - 1] = i
         row_times.append(tm)
 
     def finalize(wd):
@@ -343,27 +345,76 @@ def import_xlsx(path: str, term_start: str | None = None) -> dict:
         })
     data = {"meta": meta, "courses": norm}
     with _LOCK:
+        _backup_existing()
         _save(data)
     return data
 
 
 def _save(data: dict) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = COURSES_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, COURSES_FILE)
+    # 原子写：随机 tmp 名避免并发/多进程撞名，fsync 保证断电不留半截文件，
+    # finally 清理失败残留，避免旧实现固定 .tmp 名互相覆盖。
+    tmp = f"{COURSES_FILE}.{uuid.uuid4().hex}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, COURSES_FILE)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def _backup_existing() -> None:
+    """导入新课表前备份原有 courses.json，避免解析出错后旧课表不可恢复。"""
+    if not os.path.exists(COURSES_FILE):
+        return
+    try:
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        shutil.copy2(COURSES_FILE, "%s.bak-%s" % (COURSES_FILE, stamp))
+    except OSError:
+        pass
+
+
+def _backup_corrupt() -> None:
+    """课表文件存在但内容损坏时，先复制一份再返回空视图。
+
+    与 storage._backup_corrupt 同语义：损坏 != 没有数据，必须留证据，
+    否则用户重导入时会拿不到旧 term_start，导致课程日期整体偏移。
+    """
+    if not os.path.exists(COURSES_FILE):
+        return
+    try:
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        shutil.copy2(COURSES_FILE, "%s.corrupt-%s" % (COURSES_FILE, stamp))
+    except OSError:
+        pass
 
 
 def load_courses() -> dict:
-    try:
-        with open(COURSES_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and isinstance(data.get("courses"), list):
-            return data
-    except (OSError, json.JSONDecodeError):
-        pass
-    return {"meta": {}, "courses": []}
+    # 读也必须在锁内：import 的 _save 会用 os.replace 替换文件，
+    # Windows 下并发读取持有句柄时 os.replace 可能抛 PermissionError。
+    with _LOCK:
+        if not os.path.exists(COURSES_FILE):
+            return {"meta": {}, "courses": []}
+        try:
+            # utf-8-sig：兼容用户手工编辑后带 BOM 的文件。
+            with open(COURSES_FILE, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and isinstance(data.get("courses"), list):
+                return data
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            print("[courses] 课表文件损坏，已备份并返回空视图: %r" % (exc,))
+            _backup_corrupt()
+            return {"meta": {}, "courses": []}
+        # 结构合法但不是预期形态：同样按损坏处理，避免下游拿到脏结构。
+        print("[courses] 课表文件结构异常，已备份并返回空视图")
+        _backup_corrupt()
+        return {"meta": {}, "courses": []}
 
 
 def public_summary() -> dict:
