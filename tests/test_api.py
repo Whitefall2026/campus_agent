@@ -31,10 +31,10 @@ from app.paths import DATA_DIR
 from app.ai import gateway as ai_gateway
 from app.web.handlers import Handler
 
-TOUCHED = ["todos.json", "planner_profile.json", "planner_events.json",
-           "ai_config.json", "user_profile.json", "user_evidence.json",
-           "user_memory.json", "user_state_history.json", "chat_thread.json",
-           "ai_pending.json", "ai_seen.json"]
+TOUCHED = ["todos.json", "goals.json", "planner_profile.json",
+           "planner_events.json", "ai_config.json", "user_profile.json",
+           "user_evidence.json", "user_memory.json", "user_state_history.json",
+           "chat_thread.json", "ai_pending.json", "ai_seen.json"]
 
 
 class TestApiIntegration(unittest.TestCase):
@@ -437,6 +437,39 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(todo.get("date"), today)
         self.assertEqual(todo.get("time"), entry["start"])
         self.assertEqual(todo.get("end_time"), entry["end"])
+
+    def test_goals_persist_to_server_file(self):
+        # 长期目标必须落到服务端 data/goals.json，而不是只存在浏览器
+        # localStorage，否则重启服务/换浏览器后用户自定目标会消失。
+        goals = [{
+            "id": "g-test-1",
+            "name": "完成毕业论文初稿",
+            "deadline": (date.today() + timedelta(days=30)).isoformat(),
+            "createdAt": "2026-01-01T00:00:00",
+        }]
+        s, res = self.req("POST", "/api/goals", {"goals": goals})
+        self.assertEqual(s, 200)
+        self.assertEqual([g["id"] for g in res["goals"]], ["g-test-1"])
+
+        # 直接读磁盘，证明已持久化（而非仅内存态）
+        path = os.path.join(DATA_DIR, "goals.json")
+        self.assertTrue(os.path.exists(path))
+        with open(path, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        self.assertEqual([g["id"] for g in saved], ["g-test-1"])
+
+        # 重新 GET（等价于重启后冷读）仍能取回同一条目标
+        s, res = self.req("GET", "/api/goals")
+        self.assertEqual(s, 200)
+        self.assertTrue(res["initialized"])
+        self.assertEqual([g["id"] for g in res["goals"]], ["g-test-1"])
+
+        # 非法数据必须被拒绝，避免坏数据覆盖已保存的目标
+        s, res = self.req("POST", "/api/goals",
+                          {"goals": [{"name": "缺少 id 与 deadline"}]})
+        self.assertEqual(s, 400)
+        s, res = self.req("GET", "/api/goals")
+        self.assertEqual([g["id"] for g in res["goals"]], ["g-test-1"])
 
     def test_full_flow(self):
         tomorrow = (date.today() + timedelta(days=1)).isoformat()

@@ -26,40 +26,95 @@ PRIORITY_LABEL = {"high": "高", "medium": "中", "low": "低"}
 SUGGEST_SLOTS = ["09:00", "10:30", "14:00", "16:00", "19:30", "21:00"]
 
 
+def _safe_min(hm) -> int | None:
+    """把 HH:MM 解析成当天分钟数；格式非法返回 None（脏数据不应让整表崩溃）。"""
+    try:
+        h, m = (int(x) for x in str(hm).split(":"))
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        return None
+    return h * 60 + m
+
+
+def _dur_min(todo: dict, default_min: int) -> int:
+    try:
+        dur = int(todo.get("duration_min") or default_min)
+    except (TypeError, ValueError):
+        dur = default_min
+    return dur if dur > 0 else default_min
+
+
+def _iso_ok(s) -> bool:
+    """ISO 日期是否可解析；用于过滤脏日期，避免聚合时抛错。"""
+    try:
+        date.fromisoformat(str(s))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def end_time_of(todo: dict, default_min: int = 60) -> str | None:
     """返回事项结束时间（HH:MM），没有明确时长时按 default_min 估算。"""
     if todo.get("end_time"):
         return todo["end_time"]
-    if not todo.get("time"):
+    start = _safe_min(todo.get("time"))
+    if start is None:
         return None
-    h, m = (int(x) for x in str(todo["time"]).split(":"))
-    dur = todo.get("duration_min") or default_min
-    total = h * 60 + m + dur
+    total = start + _dur_min(todo, default_min)
+    # 跨零点时按 24 小时取模（如 23:30 + 60min -> 00:30）；
+    # 区间是否跨天由比较方按“end<=start 视为跨天”处理。
     return f"{(total // 60) % 24:02d}:{total % 60:02d}"
 
 
-def _busy_map(todos: list[dict]) -> dict[str, list[tuple[str, str]]]:
+def _busy_map(todos: list[dict], include_courses: bool = False) -> dict[str, list[tuple[str, str]]]:
     busy = defaultdict(list)
-    for t in todos:
+    source = list(todos)
+    if include_courses:
+        try:
+            source += list(course_mod.term_events())
+        except Exception:
+            pass
+    for t in source:
         if t.get("status") == "done" or not t.get("date") or not t.get("time"):
             continue
         busy[t["date"]].append((t["time"], end_time_of(t)))
     return busy
 
 
+def _interval_min(start: str, end: str | None) -> tuple[int, int] | None:
+    """把 [start, end) 转成分钟区间；end<=start 视为跨零点（end += 1440）。"""
+    s = _safe_min(start)
+    e = _safe_min(end)
+    if s is None or e is None:
+        return None
+    if e <= s:
+        e += 24 * 60
+    return s, e
+
+
 def _clash(start: str, end: str, intervals: list[tuple[str, str]]) -> bool:
-    return any(start < e and s < end for s, e in intervals)
+    span = _interval_min(start, end)
+    if span is None:
+        return False
+    s, e = span
+    for a, b in intervals:
+        other = _interval_min(a, b)
+        if other is None:
+            continue
+        os_, oe = other
+        if s < oe and os_ < e:
+            return True
+    return False
 
 
 def _end_after(start: str, dur: int) -> str:
-    h, m = (int(x) for x in start.split(":"))
-    total = h * 60 + m + dur
+    total = (_safe_min(start) or 0) + max(0, int(dur or 0))
     return f"{(total // 60) % 24:02d}:{total % 60:02d}"
 
 
 def _s_to_min(hm: str) -> int:
-    h, m = (int(x) for x in hm.split(":"))
-    return h * 60 + m
+    return _safe_min(hm) or 0
 
 
 def find_conflicts(todos: list[dict]) -> list[dict]:
@@ -72,13 +127,22 @@ def find_conflicts(todos: list[dict]) -> list[dict]:
             continue
         by_day[t["date"]].append(t)
     for day, items in by_day.items():
-        items.sort(key=lambda t: t["time"])
+        items.sort(key=lambda t: _s_to_min(t["time"]))
         for i in range(len(items)):
             a = items[i]
             a_end = end_time_of(a)
+            a_span = _interval_min(a["time"], a_end)
+            if a_span is None:
+                continue
+            a_s, a_e = a_span
             for j in range(i + 1, len(items)):
                 b = items[j]
-                if b["time"] < a_end:
+                b_span = _interval_min(b["time"], end_time_of(b))
+                if b_span is None:
+                    continue
+                b_s, b_e = b_span
+                # b 已按开始时间排序；同为跨天区间时用数值比较，避免字符串倒挂。
+                if b_s < a_e and a_s < b_e:
                     conflicts.append({
                         "kind": "conflict",
                         "date": day,
@@ -93,8 +157,13 @@ def find_conflicts(todos: list[dict]) -> list[dict]:
                 or not t.get("date") or not t.get("time") or not t.get("deadline")):
             continue
         dl_t = t.get("deadline_time") or "23:59"
-        start = datetime.combine(date.fromisoformat(t["date"]), datetime.strptime(t["time"], "%H:%M").time())
-        dl = datetime.combine(date.fromisoformat(t["deadline"]), datetime.strptime(dl_t, "%H:%M").time())
+        try:
+            start = datetime.combine(date.fromisoformat(t["date"]),
+                                     datetime.strptime(t["time"], "%H:%M").time())
+            dl = datetime.combine(date.fromisoformat(t["deadline"]),
+                                  datetime.strptime(dl_t, "%H:%M").time())
+        except (ValueError, TypeError):
+            continue  # 脏日期/时间：跳过而不是让整个状态接口 500
         if start > dl:
             conflicts.append({
                 "kind": "deadline",
@@ -119,13 +188,21 @@ def slot_conflicts(parsed: dict, todos: list[dict]) -> list[str]:
     except Exception:
         pass
     msgs = []
+    span = _interval_min(parsed["time"], end)
+    if span is None:
+        return []
+    p_s, p_e = span
     for t in others:
         if t.get("status") == "done" or not t.get("date") or not t.get("time"):
             continue
         if t["date"] != parsed["date"]:
             continue
         t_end = end_time_of(t)
-        if parsed["time"] < t_end and t["time"] < end:
+        other = _interval_min(t["time"], t_end)
+        if other is None:
+            continue
+        o_s, o_e = other
+        if p_s < o_e and o_s < p_e:
             msgs.append(f"与已有事项「{t['title']}」（{t['time']}-{t_end}）冲突")
     return msgs
 
@@ -134,8 +211,10 @@ def suggest_slot(todo: dict, todos: list[dict], today: date, now: datetime) -> d
     """为未安排时间的事项建议一个可用时段。"""
     if todo.get("date") or todo.get("status") == "done":
         return None
-    dur = todo.get("duration_min") or 90
-    busy = _busy_map(todos)
+    dur = _dur_min(todo, 90)
+    # 必须把课程表并入忙碌集合：否则和建议页的冲突检测口径相反，
+    # 会把待办建议到正在上课的时段。
+    busy = _busy_map(todos, include_courses=True)
     now_min = now.hour * 60 + now.minute
 
     def first_free(slots, day_iso, skip_before: int | None = None):
@@ -248,18 +327,18 @@ def build_state(todos: list[dict], now: datetime | None = None) -> dict:
 
     ds = {today_iso}
     for t in schedules:
-        if t.get("date"):
+        if _iso_ok(t.get("date")):
             ds.add(t["date"])
     for ev in course_events:
-        if ev.get("date"):
+        if _iso_ok(ev.get("date")):
             ds.add(ev["date"])
-    start_d = date.fromisoformat(min(ds))
-    end_d = date.fromisoformat(max(ds))
+    valid_days = sorted({date.fromisoformat(s) for s in ds if _iso_ok(s)})
+    start_d = valid_days[0]
+    end_d = valid_days[-1]
     if (end_d - start_d).days > 35:
         # 跨度太大时不生成逐日数组，只保留“近 7 天 + 有日程的日期”
         keep = {today + timedelta(days=i) for i in range(7)}
-        for iso in ds:
-            keep.add(date.fromisoformat(iso))
+        keep.update(valid_days)
         day_iter = sorted(keep)
     else:
         day_iter = [start_d + timedelta(days=i)

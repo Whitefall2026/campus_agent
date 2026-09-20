@@ -63,13 +63,15 @@ def _acquire_single_instance() -> bool:
     global _mutex_handle
     if os.name != "nt":
         return True
-    kernel32 = ctypes.windll.kernel32
+    # use_last_error=True 让 ctypes 在调用后立即捕获错误码，set/get_last_error
+    # 操作的是同一份副本，才能可靠读到 ERROR_ALREADY_EXISTS。
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateMutexW.restype = ctypes.c_void_p
     ctypes.set_last_error(0)
     handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
     if not handle:
         return True
-    if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
         kernel32.CloseHandle(ctypes.c_void_p(handle))
         webbrowser.open(_read_running_url())
         return False

@@ -146,6 +146,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 | 文件 | 内容 |
 | --- | --- |
 | `todos.json` / `courses.json` | 日程、待办和课程表 |
+| `goals.json` | 长期目标 |
 | `chat_thread.json` | 本地对话记录 |
 | `ai_pending.json` / `ai_config.json` | 待采纳队列和 AI 配置 |
 | `user_profile.json` / `user_state_history.json` | 动态画像与历史快照 |
@@ -153,7 +154,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 | `planner_profile.json` / `planner_events.json` | 精力曲线与规划反馈 |
 | `wechat_config.json` / `wechat_activity.json` / `wechat_state.json` | 微信配置、活动和处理状态 |
 
-长期目标保存在当前浏览器的 `localStorage` 中，不写入服务器数据目录。清除浏览器站点数据会同时清除长期目标。
+长期目标保存在 `data/goals.json`，与日程、待办一致，重启应用或更换浏览器都不会丢失。浏览器 `localStorage` 仅作为离线缓存与旧版本数据的迁移来源。
 
 `data/` 已被 `.gitignore` 忽略。这个目录可能包含 API Key、微信状态和个人日程，请勿提交到 Git、粘贴到 Issue，或作为调试附件公开。
 

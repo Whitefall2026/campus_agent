@@ -46,14 +46,32 @@ const state = {
 
 /* ---------------- 基础工具 ---------------- */
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    method: opts.method || "GET",
-    headers: { "Content-Type": "application/json" },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  const data = await res.json();
-  if (!res.ok || data.ok === false) throw new Error(data.error || "请求失败");
-  return data;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeout || 25000);
+  try {
+    const res = await fetch(path, {
+      method: opts.method || "GET",
+      headers: { "Content-Type": "application/json" },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      signal: controller.signal,
+    });
+    let data = null;
+    const text = await res.text();
+    if (text) {
+      try { data = JSON.parse(text); } catch (_) { data = null; }
+    }
+    if (!res.ok) {
+      throw new Error((data && data.error) || `请求失败（HTTP ${res.status}）`);
+    }
+    if (data && data.ok === false) throw new Error(data.error || "请求失败");
+    if (data === null) throw new Error(`请求失败（HTTP ${res.status}）`);
+    return data;
+  } catch (err) {
+    if (err && err.name === "AbortError") throw new Error("请求超时，请稍后重试");
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function esc(s) {
@@ -272,7 +290,7 @@ function incomingItemHTML(p) {
         <span class="badge ${k.cls}">${k.icon} 建议${k.label}</span>
         <span class="badge" style="--c:#0e7490">${method}${conf ? " · " + conf : ""}</span>
       </div>
-      <div class="ai-when">${fmtAiWhen(f) || "未识别到明确时间"}</div>
+      <div class="ai-when">${esc(fmtAiWhen(f)) || "未识别到明确时间"}</div>
       ${f.location ? `<div class="ai-when">${esc(f.location)}</div>` : ""}
       ${src ? `<div class="ai-raw">${src}</div>` : ""}
       <div class="ai-reason">${sourceLine}</div>
@@ -429,9 +447,11 @@ function renderWx(partial) {
     el.innerHTML = "○ 未运行";
   }
 
-  const input = $("#wxChats");
-  if (document.activeElement !== input) input.value = (s.watch || []).join("、");
-  $("#wxAll").checked = !!s.watch_all;
+  if (!state.wxDirty) {
+    const input = $("#wxChats");
+    if (document.activeElement !== input) input.value = (s.watch || []).join("、");
+    $("#wxAll").checked = !!s.watch_all;
+  }
   $("#wxStartBtn").disabled = !!s.running;
   $("#wxScanBtn").disabled = !s.connected;
   $("#wxStopBtn").disabled = !s.running;
@@ -626,9 +646,9 @@ function dayInfo(iso) {
 function eventHTML(t) {
   const c = catOf(t);
   const meta = [
-    t.time ? timeRange(t) : "",
+    t.time ? esc(timeRange(t)) : "",
     t.location ? esc(t.location) : "",
-    t.done ? "" : deadlineText(t),
+    t.done ? "" : esc(deadlineText(t)),
   ].filter(Boolean).join(" · ");
   const ops = t.course ? "" : `
     <span class="ev-ops">
@@ -674,7 +694,7 @@ function renderSchedulePage() {
   const inPeriod = (t, p) => t.time && t.time >= p.min && t.time < p.max;
   const emptyDayMsg = !items.length
     ? `<div class="empty-day">
-         <p>${info.label} 还没有安排 — 把待办卡片拖进下面的时段，即可排进这天</p>
+         <p>${info.label} 还没有安排 — 从「待办」页点“规划到日程”，即可把任务排进这天</p>
          <button class="primary" data-action="add-day">＋ 添加安排</button>
        </div>`
     : "";
@@ -792,11 +812,11 @@ function todoItemHTML(t) {
     sourceBadge(t),
   ].filter(Boolean).join("");
   const meta = [
-    t.deadline ? `⏰ 截止 ${fmtDay(t.deadline)}${t.deadline_time ? " " + t.deadline_time : ""}` : "",
+    t.deadline ? `⏰ 截止 ${fmtDay(t.deadline)}${t.deadline_time ? " " + esc(t.deadline_time) : ""}` : "",
     t.deadline && t.deadline < (state.data ? state.data.today : "") && !t.done ? "（已逾期）" : "",
   ].filter(Boolean).join("　");
   return `
-  <div class="todo-item ${t.done ? "done" : ""} ${t.overdue ? "overdue" : ""}" data-id="${esc(t.id)}" ${t.done ? "" : `draggable="true" title="按住可拖到日程页的某个时段"`}>
+  <div class="todo-item ${t.done ? "done" : ""} ${t.overdue ? "overdue" : ""}" data-id="${esc(t.id)}">
     <div class="td-main">
       <div class="td-title">${esc(t.title)} <span class="tl-badges">${badges}</span></div>
       ${meta ? `<div class="td-meta">${meta}</div>` : ""}
@@ -827,6 +847,11 @@ function renderTodosPage() {
   const counts = { open: (state.data.todo_items || []).length, done: (state.data.todo_done || []).length };
   $("#todoFilterInfo").textContent = `未完成 ${counts.open} · 已完成 ${counts.done}`;
   const box = $("#todoList");
+  // 拆解面板悬挂在列表项之后，整表重建会把它抹掉。旧做法是“有面板就跳过重建”，
+  // 结果面板打开期间待办列表被冻结、轮询更新全部失效。改为先摘下已打开的面板，
+  // 重建后按父任务重新挂回：既不丢面板，列表也能正常刷新。
+  const panels = Array.from(box.querySelectorAll(".sub-panel"));
+  panels.forEach((p) => p.remove());
   if (!list.length) {
     const addBtn = filter === "done"
       ? ""
@@ -838,6 +863,12 @@ function renderTodosPage() {
     return;
   }
   box.innerHTML = list.map(todoItemHTML).join("");
+  panels.forEach((p) => {
+    const target = Array.from(box.querySelectorAll(".todo-item"))
+      .find((el) => el.dataset.id === p.dataset.parent);
+    if (target) target.after(p);
+    else box.appendChild(p);   // 父任务在本次筛选下不可见时，面板仍可收起/操作
+  });
 }
 
 $(".todo-filter").addEventListener("click", (e) => {
@@ -878,38 +909,75 @@ function validGoal(goal) {
     && goal.name.trim() && /^\d{4}-\d{2}-\d{2}$/.test(goal.deadline || "");
 }
 
-function saveGoals() {
+function normalizeGoal(goal) {
+  return {
+    id: goal.id,
+    name: goal.name.trim().slice(0, 120),
+    deadline: goal.deadline,
+    createdAt: typeof goal.createdAt === "string" ? goal.createdAt : new Date().toISOString(),
+  };
+}
+
+/* 浏览器本地存储只作为离线缓存与旧版本数据的迁移来源，
+   目标以服务端 data/goals.json 为准，避免端口/浏览器变化导致目标丢失。 */
+function readGoalCache() {
+  try {
+    const raw = localStorage.getItem(GOALS_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(validGoal).map(normalizeGoal) : [];
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeGoalCache() {
   try {
     localStorage.setItem(GOALS_KEY, JSON.stringify(state.goals));
+  } catch (_) { /* 缓存写入失败不影响服务端持久化 */ }
+}
+
+async function saveGoals() {
+  try {
+    const res = await api("/api/goals", { method: "POST", body: { goals: state.goals } });
+    if (Array.isArray(res.goals)) state.goals = res.goals.map(normalizeGoal);
+    writeGoalCache();
     return true;
   } catch (_) {
-    alert("目标保存失败，请检查浏览器是否允许本地存储。");
+    alert("目标保存失败，请确认本地服务正在运行后重试。");
     return false;
   }
 }
 
-function loadGoals() {
-  const raw = localStorage.getItem(GOALS_KEY);
-  if (raw === null) {
-    const now = new Date().toISOString();
-    state.goals = [
-      { id: goalId(), name: "完成毕业论文初稿", deadline: addDays(todayISO(), 30), createdAt: now },
-      { id: goalId(), name: "准备英语等级考试", deadline: addDays(todayISO(), 75), createdAt: now },
-    ];
-    saveGoals();
+async function loadGoals() {
+  let serverGoals = null;
+  let initialized = false;
+  try {
+    const res = await api("/api/goals");
+    serverGoals = Array.isArray(res.goals) ? res.goals.filter(validGoal).map(normalizeGoal) : [];
+    initialized = !!res.initialized;
+  } catch (_) {
+    // 服务不可用时退回浏览器缓存，保证页面仍能展示已有目标
+    state.goals = readGoalCache() || [];
     return;
   }
-  try {
-    const parsed = JSON.parse(raw);
-    state.goals = Array.isArray(parsed) ? parsed.filter(validGoal).map((goal) => ({
-      id: goal.id,
-      name: goal.name.trim().slice(0, 120),
-      deadline: goal.deadline,
-      createdAt: typeof goal.createdAt === "string" ? goal.createdAt : new Date().toISOString(),
-    })) : [];
-  } catch (_) {
-    state.goals = [];
+  if (initialized) {
+    state.goals = serverGoals;
+    writeGoalCache();
+    return;
   }
+  const migrated = readGoalCache();   // 旧版本保存在浏览器里的目标：迁移到服务端
+  if (migrated && migrated.length) {
+    state.goals = migrated;
+    await saveGoals();
+    return;
+  }
+  const now = new Date().toISOString();
+  state.goals = [
+    { id: goalId(), name: "完成毕业论文初稿", deadline: addDays(todayISO(), 30), createdAt: now },
+    { id: goalId(), name: "准备英语等级考试", deadline: addDays(todayISO(), 75), createdAt: now },
+  ];
+  await saveGoals();
 }
 
 function resetGoalForm() {
@@ -960,7 +1028,7 @@ function renderGoals() {
     }).join("")}`;
 }
 
-$("#goalForm").addEventListener("submit", (e) => {
+$("#goalForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = $("#goalName").value.trim();
   const deadline = $("#goalDeadline").value;
@@ -976,7 +1044,7 @@ $("#goalForm").addEventListener("submit", (e) => {
   } else {
     state.goals.push({ id: goalId(), name: name.slice(0, 120), deadline, createdAt: new Date().toISOString() });
   }
-  if (!saveGoals()) {
+  if (!(await saveGoals())) {
     state.goals = previous;
     return;
   }
@@ -989,7 +1057,7 @@ $("#goalSort").addEventListener("change", (e) => {
   state.goalSort = e.target.value === "desc" ? "desc" : "asc";
   renderGoals();
 });
-$("#goalList").addEventListener("click", (e) => {
+$("#goalList").addEventListener("click", async (e) => {
   const button = e.target.closest("[data-goal-action]");
   if (!button) return;
   if (button.dataset.goalAction === "focus-add") {
@@ -1014,7 +1082,7 @@ $("#goalList").addEventListener("click", (e) => {
   if (button.dataset.goalAction === "delete" && confirm(`确认删除目标“${goal.name}”？`)) {
     const previous = [...state.goals];
     state.goals = state.goals.filter((item) => item.id !== goal.id);
-    if (!saveGoals()) state.goals = previous;
+    if (!(await saveGoals())) state.goals = previous;
     if (state.goalEditId === goal.id) resetGoalForm();
     renderGoals();
   }
@@ -1069,7 +1137,7 @@ function openItemModal({ mode, id, defaults = {} }) {
     const sug = state.suggestionsById[id];
     tip.classList.remove("hidden");
     tip.innerHTML = sug
-      ? `建议空档：${fmtDay(sug.date)}（${fmtWeekday(sug.date)}）${sug.time}–${sug.end_time}（已帮你预填，可修改）`
+      ? `建议空档：${fmtDay(sug.date)}（${fmtWeekday(sug.date)}）${esc(sug.time)}–${esc(sug.end_time)}（已帮你预填，可修改）`
       : "暂时没有自动建议，你可以手动选择任意日期和时段。";
     if (sug && !defaults.override) {
       $("#edDate").value = sug.date;
@@ -1227,6 +1295,9 @@ $("#clearScheduleBtn").addEventListener("click", () => clearScope("schedule", "�
 $("#clearTodoBtn").addEventListener("click", () => clearScope("todo", "待办"));
 
 /* 微信控制 */
+// 表单脏标记：用户编辑未保存时，轮询刷新不覆盖输入
+$("#wxChats").addEventListener("input", () => { state.wxDirty = true; });
+$("#wxAll").addEventListener("change", () => { state.wxDirty = true; });
 $("#wxApplyBtn").addEventListener("click", async () => {
   const watch = $("#wxChats").value
     .split(/[,，、;；\n]+/).map((x) => x.trim()).filter(Boolean);
@@ -1234,7 +1305,10 @@ $("#wxApplyBtn").addEventListener("click", async () => {
     watch,
     watch_all: $("#wxAll").checked,
   });
-  if (res) refreshWx();
+  if (res) {
+    state.wxDirty = false;
+    refreshWx();
+  }
 });
 $("#wxStartBtn").addEventListener("click", async () => {
   await wxAction("/api/wechat/start");
@@ -1852,7 +1926,7 @@ $("#profileResetBtn").addEventListener("click", async () => {
 /* 初始化 */
 async function init() {
   if (!location.hash) history.replaceState(null, "", "#/input");
-  loadGoals();
+  await loadGoals();
   showPage();
   await refresh().catch(() => {});
   refreshWx();
