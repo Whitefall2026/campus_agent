@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.1"
+  #define MyAppVersion "2.0"
 #endif
 #define MyAppName "RUC Agent 校园管家"
 #define MyAppPublisher "RUC Agent"

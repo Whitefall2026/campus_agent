@@ -135,7 +135,7 @@ winget install --id JRSoftware.InnoSetup -e
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-产物位于 `dist\installer\RUC-Agent-Setup-1.1.exe`，对应校验文件为 `dist\installer\SHA256SUMS-1.1.txt`。构建脚本会先运行自动化测试，再对冻结后的程序执行静态页面与核心 API 冒烟验证。
+产物位于 `dist\installer\RUC-Agent-Setup-2.0.exe`，对应校验文件为 `dist\installer\SHA256SUMS-2.0.txt`。构建脚本会先运行自动化测试，再对冻结后的程序执行静态页面与核心 API 冒烟验证。
 
 当前安装包未配置 Authenticode 代码签名，首次运行时 Windows 可能显示 SmartScreen 提示。请先核对 Release 附带的 SHA-256 校验文件，再决定是否运行；正式公开分发前建议配置代码签名。
 
