@@ -4,7 +4,7 @@
 
 RUC Agent 是一个本地运行的校园生活助手。你可以像聊天一样输入安排，也可以让它从微信消息中发现事项；识别结果经过确认后进入日程或待办，后续再由规划引擎检查冲突、评估风险并安排合适时段。
 
-当前版本：**2.1**。新增 Excel 待办导入，修正精力预算、负载计算与多项排期逻辑，详见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本：**2.1.1**。新增 Excel 待办导入，修正精力预算、负载计算与多项排期逻辑，详见 [CHANGELOG.md](CHANGELOG.md)。
 
 核心后端仅使用 Python 标准库，前端使用原生 HTML、CSS 和 JavaScript。即使不配置大模型，日程提取、待办管理、冲突检查和规则排期也可以使用；配置 AI 后可获得更复杂的语义理解、任务拆解、画像分析和自然语言建议。
 
@@ -169,13 +169,13 @@ winget install --id JRSoftware.InnoSetup -e
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-产物位于 `dist\installer\RUC-Agent-Setup-2.1.exe`，对应校验文件为 `dist\installer\SHA256SUMS-2.1.txt`。构建脚本会先运行自动化测试，再对冻结后的程序执行静态页面与核心 API 冒烟验证。
+产物位于 `dist\installer\RUC-Agent-Setup-2.1.1.exe`，对应校验文件为 `dist\installer\SHA256SUMS-2.1.1.txt`。构建脚本会先运行自动化测试，再对冻结后的程序执行静态页面与核心 API 冒烟验证。
 
 当前安装包未配置 Authenticode 代码签名，首次运行时 Windows 可能显示 SmartScreen 提示。请先核对 Release 附带的 SHA-256 校验文件，再决定是否运行；正式公开分发前建议配置代码签名。
 
 ## macOS 安装包
 
-Release 提供两种原生 DMG，Apple Silicon（M1/M2/M3 等）选择 `RUC-Agent-2.1-macos-arm64.dmg`，Intel Mac 选择 `RUC-Agent-2.1-macos-x86_64.dmg`。打开 DMG 后将 **RUC Agent.app** 拖到 **Applications**，再从应用程序目录启动；应用会打开浏览器并留在菜单栏，菜单提供打开应用、打开数据目录和退出。
+Release 提供两种原生 DMG，Apple Silicon（M1/M2/M3 等）选择 `RUC-Agent-2.1.1-macos-arm64.dmg`，Intel Mac 选择 `RUC-Agent-2.1.1-macos-x86_64.dmg`。打开 DMG 后将 **RUC Agent.app** 拖到 **Applications**，再从应用程序目录启动；应用会打开浏览器并留在菜单栏，菜单提供打开应用、打开数据目录和退出。
 
 macOS 个人数据保存在 `~/Library/Application Support/RUC Agent/data`，升级或移除 `.app` 不删除这些数据。核心对话、日程、长期目标、精力规划和 Excel 待办可用；微信读取仍仅支持 Windows。macOS 不自动设置登录启动，如需自启动可在系统设置“通用 → 登录项”添加 RUC Agent。
 

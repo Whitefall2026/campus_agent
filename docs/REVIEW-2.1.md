@@ -1,5 +1,7 @@
 # v2.1 代码审查与算法调整
 
+最终补丁版本为 v2.1.1。Intel macOS 原生诊断记录 Handler 导入约 0.7 秒，HTTPServer 构造约 35 秒，堆栈停在 `socket.getfqdn()`。`app/web/server.py` 统一回环服务绑定，不执行反向 DNS；源码、桌面及 HTTP 回归均使用该入口，保持测试原超时不变。
+
 审查范围为第一方核心后端、AI 规划、持久化、HTTP、原生前端和桌面入口；第三方微信副本保持原样。以下为已定位并修改的问题，不代表所有路径均无缺陷。
 
 | 问题与影响 | 修改位置 | 回归证据 |
@@ -20,7 +22,7 @@ Excel 新功能由 `app/core/xlsx.py:55` 与 `app/core/excel_todos.py:75` 提供
 
 精力优化沿用现有曲线格式 `version=1`，不需要迁移。新增 `energy_rating` 和 `source_pending_id` 为可选字段。负载与风险仍为有解释依据的规则模型；反馈权重无法证明真实失败率，因此风险文案改为模拟估计。
 
-Windows 验证：隔离数据运行 `python -m unittest discover -s tests`，实际 141 项、140 通过、1 项原生 Mac 锁测试跳过；`node --check static/app.js`、`python -m compileall -q app tests server.py desktop.py`、`git diff --check` 通过。Chrome/Selenium 验证 Excel 预览、取消、空选择、单项导入、刷新持久化和重复禁选；桌面 1440×1000 与 375px 宽度无横向溢出，无应用脚本错误。README 截图全部为虚构示例。
+Windows 验证：隔离数据运行 `python -m unittest discover -s tests`，v2.1.1 实际 142 项、141 通过、1 项原生 Mac 锁测试跳过；`node --check static/app.js`、`python -m compileall -q app tests server.py desktop.py`、`git diff --check` 通过。Chrome/Selenium 验证 Excel 预览、取消、空选择、单项导入、刷新持久化和重复禁选；桌面 1440×1000 与 375px 宽度无横向溢出，无应用脚本错误。README 截图全部为虚构示例。
 
 macOS 配套增加菜单栏入口、独立数据目录、单实例锁、双架构 DMG 原生构建与 GitHub Actions；Windows 环境验证只能覆盖模拟平台逻辑，原生 `.app`、DMG、架构与冻结冒烟由 macOS runner 验证。真实 AI 服务、真实微信登录读取以及实体 Mac 安装/菜单栏交互需相应环境人工验收。
 

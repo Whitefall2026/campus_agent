@@ -23,6 +23,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestMacDataPaths(unittest.TestCase):
+    def test_local_server_does_not_need_reverse_dns(self):
+        from app.web.server import LocalHTTPServer
+        from http.server import BaseHTTPRequestHandler
+        with patch("socket.getfqdn", side_effect=AssertionError("DNS must not run")):
+            server = LocalHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+            try:
+                self.assertEqual(server.server_name, "localhost")
+                self.assertGreater(server.server_port, 0)
+            finally:
+                server.server_close()
+
     def test_mac_data_lives_outside_the_bundle_and_source_tree(self):
         with patch.object(paths, "sys", SimpleNamespace(platform="darwin")), \
                 patch.object(paths.os.path, "expanduser", return_value="/Users/test"):

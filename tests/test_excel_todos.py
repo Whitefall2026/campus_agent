@@ -284,9 +284,9 @@ class TestExcelTodos(unittest.TestCase):
 HTTP_SERVER = """
 import json, sys
 from pathlib import Path
-from http.server import ThreadingHTTPServer
+from app.web.server import LocalHTTPServer
 from app.web.handlers import Handler
-server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+server = LocalHTTPServer(('127.0.0.1', 0), Handler)
 Path(sys.argv[1]).write_text(json.dumps({'port': server.server_port}), encoding='utf-8')
 server.serve_forever()
 """

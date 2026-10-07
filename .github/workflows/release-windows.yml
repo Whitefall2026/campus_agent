@@ -1,0 +1,120 @@
+name: Windows release packages
+
+on:
+  push:
+    tags: ['v2.1', 'v2.1.*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to build and upload to
+        required: true
+        default: v2.1.1
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify release version
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = & python -B -c 'from app.version import __version__; print(__version__)'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read source version.' }
+          $version = ($version | Select-Object -Last 1).Trim()
+          if ($env:RELEASE_TAG -ne "v$version") { throw 'Release tag does not match source version.' }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "BUILD_VERSION=$version" -Encoding utf8
+      - name: Install Windows build dependencies
+        # pip resolves the vendored editable dependency relative to its cwd.
+        working-directory: packaging
+        run: |
+          python -m pip install -r requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Build dependency installation failed.' }
+      - name: Locate or install Inno Setup
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Find-Iscc {
+            $command = Get-Command iscc -ErrorAction SilentlyContinue
+            if ($command) { return $command.Source }
+            $candidates = @(
+              (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+              (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
+              (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+            )
+            return $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          }
+          $iscc = Find-Iscc
+          if (-not $iscc) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -notin @(0, 3010)) { throw 'Inno Setup installation failed.' }
+            $iscc = Find-Iscc
+          }
+          if (-not $iscc) { throw 'ISCC.exe was not found after installation.' }
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path -Parent $iscc) -Encoding utf8
+      - name: Test, freeze, smoke-test and create installer
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1 -Version $env:BUILD_VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed.' }
+      - name: Preserve packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: RUC-Agent-windows-x64
+          path: |
+            dist/RUCAgent/
+            dist/installer/RUC-Agent-Setup-${{ env.BUILD_VERSION }}.exe
+            dist/installer/SHA256SUMS-${{ env.BUILD_VERSION }}.txt
+          if-no-files-found: error
+      # The coordinating task creates the release; this job only uploads assets.
+      - name: Upload to existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $assets = @(
+            "dist/installer/RUC-Agent-Setup-$env:BUILD_VERSION.exe",
+            "dist/installer/SHA256SUMS-$env:BUILD_VERSION.txt"
+          )
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing asset: $asset" }
+          }
+          $ready = $false
+          for ($attempt = 1; $attempt -le 10; $attempt++) {
+            gh release view $env:RELEASE_TAG --repo $env:GH_REPO *> $null
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+            Write-Host "Waiting for release $env:RELEASE_TAG ($attempt/10)"
+            Start-Sleep -Seconds 15
+          }
+          if (-not $ready) { throw 'Create the release (a draft is sufficient), then rerun this job.' }
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            gh release upload $env:RELEASE_TAG @assets --repo $env:GH_REPO --clobber
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "Upload retry $attempt/5"
+            Start-Sleep -Seconds 10
+          }
+          throw 'Release asset upload failed after five attempts.'

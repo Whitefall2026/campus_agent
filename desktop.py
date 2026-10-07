@@ -15,7 +15,7 @@ import threading
 import time
 import urllib.request
 import webbrowser
-from http.server import ThreadingHTTPServer
+from app.web.server import LocalHTTPServer
 
 from app.paths import DATA_DIR, RESOURCE_ROOT
 from app.version import __version__
@@ -139,12 +139,11 @@ def _make_server(preferred_port: int):
     # 延迟导入可确保窗口版的 stdout/stderr 已准备好。
     from app.web.handlers import Handler
 
-    ThreadingHTTPServer.daemon_threads = True
     try:
-        return ThreadingHTTPServer((HOST, preferred_port), Handler)
+        return LocalHTTPServer((HOST, preferred_port), Handler)
     except OSError:
         # 8000 被其他软件占用时使用系统分配端口，功能不因此失效。
-        return ThreadingHTTPServer((HOST, 0), Handler)
+        return LocalHTTPServer((HOST, 0), Handler)
 
 
 def _start_wechat() -> None:

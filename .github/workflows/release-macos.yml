@@ -2,13 +2,13 @@ name: macOS release packages
 
 on:
   push:
-    tags: [v2.1]
+    tags: ['v2.1', 'v2.1.*']
   workflow_dispatch:
     inputs:
       release_tag:
         description: Existing release tag to build and upload to
         required: true
-        default: v2.1
+        default: v2.1.1
         type: string
 
 permissions:

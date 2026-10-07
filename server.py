@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 import sys
-from http.server import ThreadingHTTPServer
+from app.web.server import LocalHTTPServer
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -20,7 +20,7 @@ from app.wechat.bridge import BRIDGE as WX_BRIDGE
 
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", "8000"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = LocalHTTPServer(("127.0.0.1", port), Handler)
     print(f"校园管家 demo 已启动: http://127.0.0.1:{port}")
     print("按 Ctrl+C 停止服务")
     if WX_BRIDGE.config().get("auto_start"):

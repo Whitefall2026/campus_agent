@@ -18,7 +18,7 @@ import unittest
 import urllib.error
 import urllib.request
 from datetime import date, timedelta
-from http.server import ThreadingHTTPServer
+from app.web.server import LocalHTTPServer
 from unittest.mock import patch
 
 # 测试隔离：必须在导入 app.* 之前生效，否则 app.paths 会把数据目录锁到仓库 data/。
@@ -40,7 +40,7 @@ TOUCHED = ["todos.json", "goals.json", "planner_profile.json",
 class TestApiIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        cls.server = LocalHTTPServer(("127.0.0.1", 0), Handler)
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()

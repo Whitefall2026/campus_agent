@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Python = "python",
-    [string]$Version = "2.1",
+    [string]$Version = "2.1.1",
     [switch]$SkipTests,
     [switch]$SkipInstaller
 )

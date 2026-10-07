@@ -13,7 +13,6 @@ import unittest
 import urllib.request
 from contextlib import ExitStack
 from datetime import date, datetime, timedelta
-from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -467,7 +466,8 @@ class TestHandlerRegressions(IsolatedDataTest):
             def log_message(self, fmt, *args):
                 pass
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
+        from app.web.server import LocalHTTPServer
+        server = LocalHTTPServer(("127.0.0.1", 0), QuietHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.base_url = "http://127.0.0.1:%d" % server.server_address[1]
