@@ -1,0 +1,27 @@
+# v2.1 代码审查与算法调整
+
+审查范围为第一方核心后端、AI 规划、持久化、HTTP、原生前端和桌面入口；第三方微信副本保持原样。以下为已定位并修改的问题，不代表所有路径均无缺陷。
+
+| 问题与影响 | 修改位置 | 回归证据 |
+| --- | --- | --- |
+| 全天能量按小时相加，半小时单位少算一半 | `app/planner/energy.py:112` | 系数为 1 的 16 小时提供 32 点；多小时反馈分摊且有限值校验 |
+| 只检测格子起点，09:10 开始的日程漏占 09:00–09:30 | `app/planner/planner.py:60` | 区间交叠占位；已完成日程仍保留真实时间；零能量时段不可排 |
+| 部分建议读取默认曲线；缓存忽略曲线/课程/历史变化 | `app/ai/planner.py`、`app/web/handlers.py` | 统一持久化曲线，缓存包含全部规划输入签名与候选范围 |
+| 当日引擎会排到过去，取整还忽略秒数 | `app/web/handlers.py:187`、`app/planner/planner.py:185` | 14:30:01 与 14:30:00.000001 均从 15:00 排，未来日期保留全天窗口 |
+| 既有日程与课程不计负载，远期待办条数误报高负载 | `app/planner/shield.py:51`、`app/ai/profile.py` | 既有占用、近三天需求/容量、远期截止排除及三天边界 |
+| 风险入口未读取历史；完成与反馈双计；陈旧疲劳长期影响状态 | `app/planner/risk.py:63`、`app/ai/profile.py` | 持久化历史生效，同任务同日期只留最后一次观察；疲劳只看近期反馈 |
+| 同名不同日期对话事项被去重，卡片采纳落空 | `app/ai/gateway.py:599`、`app/ai/chat.py`、HTTP 采纳路由 | 两轮同标题不同日期均保留真实 pending ID，均可通过 HTTP 采纳 |
+| 跨午夜占位/冲突漏报；pending 在午夜前误过期 | `app/core/scheduler.py:140`、`app/ai/gateway.py:702` | 完整日期分钟区间、次日占位、跨午夜卡片到次日结束后才过期 |
+| 无空档时强制建议 09:00/21:00；结束晚于截止不报警 | `app/core/scheduler.py:213` | 建议校验空档、当前时间、结束截止、个人能量，无合法时段返回空 |
+| 清空日程日期或标题后条目消失 | `app/web/handlers.py` | PATCH 先改副本，非法请求返回 400，原数据保留 |
+| 下周日期落到本周；课表全角周次解析错误；重复后台启动打开浏览器 | `app/core/extractor.py`、`app/core/courses.py`、`desktop.py` | 日期、周次及 Windows `--no-browser` 回归 |
+
+Excel 新功能由 `app/core/xlsx.py:55` 与 `app/core/excel_todos.py:75` 提供，HTTP 接口为 `POST /api/todos/import`。读取标准库 ZIP/XML 并验证边界，只使用公式缓存。预览不保存任务，提交严格校验选择索引并在待办事务内重新去重；原文件、文件名、工作表名和整行不会保存。API 保留现有的本机 Host/Origin 保护。
+
+精力优化沿用现有曲线格式 `version=1`，不需要迁移。新增 `energy_rating` 和 `source_pending_id` 为可选字段。负载与风险仍为有解释依据的规则模型；反馈权重无法证明真实失败率，因此风险文案改为模拟估计。
+
+Windows 验证：隔离数据运行 `python -m unittest discover -s tests`，实际 141 项、140 通过、1 项原生 Mac 锁测试跳过；`node --check static/app.js`、`python -m compileall -q app tests server.py desktop.py`、`git diff --check` 通过。Chrome/Selenium 验证 Excel 预览、取消、空选择、单项导入、刷新持久化和重复禁选；桌面 1440×1000 与 375px 宽度无横向溢出，无应用脚本错误。README 截图全部为虚构示例。
+
+macOS 配套增加菜单栏入口、独立数据目录、单实例锁、双架构 DMG 原生构建与 GitHub Actions；Windows 环境验证只能覆盖模拟平台逻辑，原生 `.app`、DMG、架构与冻结冒烟由 macOS runner 验证。真实 AI 服务、真实微信登录读取以及实体 Mac 安装/菜单栏交互需相应环境人工验收。
+
+发布隐私范围：本次公开源码/截图与构建资源不包含本地 `data/`、`materials/`、`.env`、API Key 或用户日程；本地文件保留。现有 Git 历史存在之前已提交、后来移除的材料，本次不进行历史重写或强制推送。静态扫描仅检查常见凭据/身份模式，不能证明历史与所有内容绝对不含隐私。

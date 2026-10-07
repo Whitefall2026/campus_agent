@@ -242,7 +242,7 @@ def _entry_from_fields(text: str, fields: dict, method: str, confidence,
         "status": "pending",
         "source": source,
     }
-    ai_gateway.add_pending(entry)
+    entry = ai_gateway.add_pending(entry)
     snapshot = {
         "id": entry["id"],
         "fields": f,

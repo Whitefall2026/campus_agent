@@ -119,8 +119,7 @@ def _extract_dates(text: str, today: date) -> list[dict]:
     pat = re.compile(r"下(?:个)?(?:周|星期|礼拜)([一二三四五六日天])")
     for m in pat.finditer(text):
         w = WEEKDAY_CN[m.group(1)]
-        days = (w - today.weekday()) % 7
-        days = days if days > 0 else 7
+        days = 7 - today.weekday() + w
         found.append({"date": (today + timedelta(days=days)).isoformat(), "raw": m.group(0), "pos": m.start()})
     # 5) 本周X / 周X / 星期X / 礼拜X（不含“下周”）
     pat = re.compile(r"(?<!下)(?:本)?(?:周|星期|礼拜)([一二三四五六日天])")

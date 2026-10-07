@@ -878,7 +878,106 @@ $(".todo-filter").addEventListener("click", (e) => {
   renderTodosPage();
 });
 
-/* ================= 长期目标（浏览器本地存储） ================= */
+/* ================= Excel 待办导入（预览后确认） ================= */
+let excelUpload = null;
+let excelBusy = false;
+
+function excelControls(busy) {
+  excelBusy = busy;
+  $("#todoExcelFile").disabled = busy;
+  $("#todoExcelChoose").disabled = busy;
+  document.querySelectorAll("#todoExcelPreview button, #todoExcelRows input").forEach((el) => {
+    el.disabled = busy || el.dataset.duplicate === "true";
+  });
+}
+
+function clearExcelPreview() {
+  excelUpload = null;
+  $("#todoExcelPreview").classList.add("hidden");
+  $("#todoExcelRows").replaceChildren();
+  $("#todoExcelWarnings").replaceChildren();
+  $("#todoExcelFile").value = "";
+}
+
+$("#todoExcelChoose").addEventListener("click", () => { $("#todoExcelFile").click(); });
+
+$("#todoExcelFile").addEventListener("change", async (e) => {
+  if (excelBusy) return;
+  const file = e.target.files && e.target.files[0];
+  clearExcelPreview();
+  if (!file) return;
+  const status = $("#todoExcelStatus");
+  if (!/\.xlsx$/i.test(file.name) || !file.size || file.size > 20 * 1024 * 1024) {
+    status.textContent = "请选择非空的 .xlsx 文件（最大 20MB）；.xls 请先另存为 .xlsx。";
+    return;
+  }
+  excelControls(true);
+  status.textContent = "正在读取并提取待办…";
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("文件读取失败"));
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.readAsDataURL(file);
+    });
+    const res = await api("/api/todos/import", { method: "POST", body: { name: file.name, data }, timeout: 60000 });
+    excelUpload = { name: file.name, data };
+    const items = res.items || [];
+    const fresh = items.filter((item) => !item.duplicate).length;
+    status.textContent = `提取 ${items.length} 条，其中 ${fresh} 条可导入；跳过 ${res.skipped || 0} 行。请核对后勾选导入。`;
+    $("#todoExcelRows").innerHTML = items.map((item, i) => `<label class="excel-row${item.duplicate ? " is-duplicate" : ""}">
+      <input type="checkbox" value="${i}" data-duplicate="${!!item.duplicate}" ${item.duplicate ? "disabled" : "checked"}>
+      <span><b>${esc(item.title)}</b><small>${esc(item.deadline || "无截止日期")}${item.deadline_time ? " " + esc(item.deadline_time) : ""} · ${{high: "高", medium: "中", low: "低"}[item.priority] || "中"}优先级 · ${esc(item.duration_min)} 分钟</small>
+      <small>${esc(item.source_row)}${item.duplicate ? " · 已存在，将跳过" : ""}</small></span>
+    </label>`).join("");
+    $("#todoExcelWarnings").innerHTML = (res.warnings || []).map((w) => `<li>${esc(w)}</li>`).join("");
+    if ((res.warning_count || 0) > (res.warnings || []).length) {
+      const li = document.createElement("li");
+      li.textContent = `共 ${res.warning_count} 条提示，仅展示前 100 条。`;
+      $("#todoExcelWarnings").appendChild(li);
+    }
+    $("#todoExcelPreview").classList.remove("hidden");
+  } catch (err) {
+    clearExcelPreview();
+    status.textContent = "提取失败：" + err.message;
+  } finally {
+    excelControls(false);
+  }
+});
+
+$("#todoExcelAll").addEventListener("click", () => {
+  document.querySelectorAll('#todoExcelRows input:not(:disabled)').forEach((el) => { el.checked = true; });
+});
+$("#todoExcelNone").addEventListener("click", () => {
+  document.querySelectorAll("#todoExcelRows input").forEach((el) => { el.checked = false; });
+});
+$("#todoExcelCancel").addEventListener("click", () => {
+  if (excelBusy) return;
+  clearExcelPreview();
+  $("#todoExcelStatus").textContent = "已取消导入。";
+});
+$("#todoExcelImport").addEventListener("click", async () => {
+  if (!excelUpload || excelBusy) return;
+  const selected = Array.from(document.querySelectorAll('#todoExcelRows input:checked:not(:disabled)')).map((el) => Number(el.value));
+  if (!selected.length) {
+    $("#todoExcelStatus").textContent = "请至少选择一条待办。";
+    return;
+  }
+  excelControls(true);
+  $("#todoExcelStatus").textContent = "正在导入选中的待办…";
+  try {
+    const res = await api("/api/todos/import", { method: "POST", body: { ...excelUpload, selected }, timeout: 60000 });
+    clearExcelPreview();
+    $("#todoExcelStatus").textContent = `已导入 ${res.imported} 条待办，跳过 ${res.duplicates} 条已存在事项。`;
+    await refresh();
+  } catch (err) {
+    $("#todoExcelStatus").textContent = "导入失败：" + err.message;
+  } finally {
+    excelControls(false);
+  }
+});
+
+/* ================= 长期目标（服务端保存与本地缓存） ================= */
 function goalId() {
   return self.crypto && crypto.randomUUID
     ? crypto.randomUUID()
@@ -1747,7 +1846,7 @@ $("#planEntries").addEventListener("click", async (e) => {
 
 /* ---- 完成反馈：待办标记完成后给出精力反馈（校准曲线） ---- */
 function rateRowHTML(id) {
-  if (state.ratedIds.has(id)) {
+  if (state.ratedIds.has(id) || (findTodo(id) || {}).energy_rating) {
     return `<div class="rate-row"><span>反馈已记录，感谢校准精力曲线</span></div>`;
   }
   return `<div class="rate-row">

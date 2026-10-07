@@ -26,7 +26,7 @@ from app.core.extractor import parse_text
 from app.core.scheduler import build_state, slot_conflicts, suggest_slot
 from app.core.storage import (goals_initialized, load_goals, load_todos,
                               save_goals, save_todos, todos_transaction)
-from app.core import kinds
+from app.core import kinds, excel_todos
 from app.ai import gateway as ai_gateway
 from app.ai import chat as ai_chat
 from app.ai import context as ai_context
@@ -48,7 +48,7 @@ from app.planner import store as plan_store
 from app.planner import llm_copies as plan_llm
 
 _BROWSE_CACHE = {}   # (iso, todos_mtime) -> (ts, 浏览快照 payload)
-_DATE_PLANS = {}     # iso -> (生成时 todos_mtime, AI 排程 payload)
+_DATE_PLANS = {}     # iso -> (输入签名, AI 排程 payload, 最早可排分钟)
 _PLAN_TTL = 25
 
 _GOAL_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -172,11 +172,24 @@ def _ai_candidate_ids(todos: list, iso: str) -> list:
     return out
 
 
-def _todos_mtime() -> float:
-    try:
-        return os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
-    except OSError:
-        return 0.0
+def _todos_mtime() -> tuple:
+    """所有规划输入的签名；课程和个人曲线变化也必须使缓存失效。"""
+    signature = []
+    for name in ("todos.json", "courses.json", "planner_profile.json", "planner_events.json"):
+        try:
+            info = os.stat(os.path.join(DATA_DIR, name))
+            signature.append((info.st_mtime_ns, info.st_size))
+        except OSError:
+            signature.append((0, 0))
+    return tuple(signature)
+
+
+def _plan_not_before(day: date, now: datetime) -> int:
+    """今日向上取整到尚未开始的半小时，包含秒和微秒。"""
+    if day != now.date():
+        return plan_engine.PLAN_START
+    seconds = now.hour * 3600 + now.minute * 60 + now.second + bool(now.microsecond)
+    return ((seconds + 1799) // 1800) * 30
 
 
 MIME = {
@@ -347,6 +360,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _safe(self, route):
         """统一入口兜底：未捕获异常时返回 500 而不冒泡断开连接。"""
+        self._responded = False
         try:
             return route()
         except _PayloadTooLarge:
@@ -447,11 +461,13 @@ class Handler(BaseHTTPRequestHandler):
         iso = day.isoformat()
         mtime = _todos_mtime()
         today_iso = date.today().isoformat()
+        now = datetime.now()
+        not_before = _plan_not_before(day, now)
         if not ai:
             cached = _DATE_PLANS.get(iso)
-            if cached is not None and cached[0] == mtime:
+            if cached is not None and cached[0] == mtime and cached[2] == not_before:
                 return copy.deepcopy(cached[1])
-            bkey = (iso, mtime)
+            bkey = (iso, mtime, not_before)
             bhit = _BROWSE_CACHE.get(bkey)
             if bhit and time.time() - bhit[0] < _PLAN_TTL:
                 return copy.deepcopy(bhit[1])
@@ -460,13 +476,13 @@ class Handler(BaseHTTPRequestHandler):
             # 未来截止的任务也可以提前安排（引擎不再预过滤日期）。
             cand_ids = _ai_candidate_ids(todos, iso)
             guide = ai_planner.guide_day_order(
-                todos, day.isoformat(), candidate_ids=cand_ids or None)
+                todos, day.isoformat(), candidate_ids=cand_ids)
             engine_ids = guide.get("order") or cand_ids
             if guide.get("order"):
                 plan0 = plan_engine.plan_day(
                     todos, day=day, candidate_order=guide["order"],
                     ai_placements=guide.get("placements") or None,
-                    candidate_ids=engine_ids or None)
+                    candidate_ids=engine_ids, not_before=not_before)
                 plan0["meta"]["ai_guided"] = True
                 plan0["meta"]["ai_rounds"] = 1
                 if guide.get("note"):
@@ -477,14 +493,14 @@ class Handler(BaseHTTPRequestHandler):
                 if rejected:
                     guide2 = ai_planner.guide_day_order(
                         todos, day.isoformat(), rejections=rejected,
-                        candidate_ids=cand_ids or None)
+                        candidate_ids=cand_ids)
                     if guide2.get("placements") or guide2.get("order"):
                         engine_ids2 = guide2.get("order") or engine_ids
                         plan0 = plan_engine.plan_day(
                             todos, day=day,
                             candidate_order=guide2.get("order") or guide.get("order"),
                             ai_placements=guide2.get("placements") or None,
-                            candidate_ids=engine_ids2 or None)
+                            candidate_ids=engine_ids2, not_before=not_before)
                         plan0["meta"]["ai_guided"] = True
                         plan0["meta"]["ai_rounds"] = 2
                         if guide2.get("note"):
@@ -493,7 +509,7 @@ class Handler(BaseHTTPRequestHandler):
                             plan0["meta"]["ai_advice"] = guide2["advice"]
             else:
                 plan0 = plan_engine.plan_day(
-                    todos, day=day, candidate_ids=cand_ids or None)
+                    todos, day=day, candidate_ids=cand_ids, not_before=not_before)
                 plan0["meta"]["ai_guided"] = True
         else:
             plan0 = plan_engine.plan_day(todos, day=day)
@@ -505,6 +521,10 @@ class Handler(BaseHTTPRequestHandler):
             # 否则会出现“排程为空但能量环已占用”的自相矛盾
             plan0["budget"]["planned_points"] = 0
             plan0["budget"]["planned_ratio"] = 0
+            budget = plan0["budget"]
+            total = budget.get("total_points") or 0
+            budget["committed_ratio"] = budget.get("scheduled_points", 0) / total if total else 0
+            plan0["meta"]["load_high"] = False
             if iso >= today_iso:
                 # 今天/未来某天首次打开时，用“计划模式候选”数量触发自动规划；
                 # 过去的日期只浏览历史，不做规划提示
@@ -516,7 +536,7 @@ class Handler(BaseHTTPRequestHandler):
             self._append_skipped_tomorrow(todos, iso, plan)
         payload = {"ok": True, "date": iso, "plan": plan, "load": load}
         if ai:
-            _DATE_PLANS[iso] = (mtime, payload)
+            _DATE_PLANS[iso] = (mtime, payload, not_before)
             if len(_DATE_PLANS) > 60:
                 for k in list(_DATE_PLANS)[:30]:
                     _DATE_PLANS.pop(k, None)
@@ -620,8 +640,47 @@ class Handler(BaseHTTPRequestHandler):
         if not self._local_guard():
             return self._json({"ok": False, "error": "forbidden"}, 403)
         # 课表导入的 base64 体积较大，单独放宽上限，其余接口维持 8MB。
-        limit = _UPLOAD_MAX_BODY if path == "/api/courses/import" else _MAX_BODY
+        limit = _UPLOAD_MAX_BODY if path in ("/api/courses/import", "/api/todos/import") else _MAX_BODY
         body = self._read_body(limit)
+        if path == "/api/todos/import":
+            name, payload = body.get("name"), body.get("data")
+            if not isinstance(name, str) or not name.lower().endswith(".xlsx") or not isinstance(payload, str):
+                return self._json({"ok": False, "error": "请选择 .xlsx 格式的任务表"}, 400)
+            try:
+                raw = base64.b64decode(payload, validate=True)
+                if not raw or len(raw) > 20 * 1024 * 1024:
+                    raise ValueError("文件为空或超过 20MB")
+                preview = excel_todos.extract_todos(raw)
+            except (ValueError, UnicodeError) as exc:
+                return self._json({"ok": False, "error": str(exc) or "文件解析失败"}, 400)
+            items = preview["items"]
+            if "selected" not in body:
+                existing = {excel_todos.task_key(t) for t in load_todos()}
+                for item in items:
+                    item["duplicate"] = excel_todos.task_key(item) in existing
+                return self._json({"ok": True, **preview})
+            selected = body["selected"]
+            if (not isinstance(selected, list) or len(selected) > excel_todos.MAX_ITEMS
+                    or any(type(i) is not int or not 0 <= i < len(items) for i in selected)):
+                return self._json({"ok": False, "error": "请选择有效的预览条目"}, 400)
+            added, duplicates = [], 0
+            with todos_transaction() as todos:
+                existing = {excel_todos.task_key(t) for t in todos}
+                for index in dict.fromkeys(selected):
+                    item = items[index]
+                    key = excel_todos.task_key(item)
+                    if key in existing:
+                        duplicates += 1
+                        continue
+                    # 只保存任务字段；文件名、工作表名、原始行和原文件不落盘。
+                    todo = {k: v for k, v in item.items() if k != "source_row"}
+                    todo.update(id=uuid.uuid4().hex, status="pending", source="excel",
+                                created_at=datetime.now().isoformat(timespec="seconds"))
+                    todos.append(todo)
+                    existing.add(key)
+                    added.append(todo)
+            return self._json({"ok": True, "imported": len(added), "duplicates": duplicates,
+                               "items": added, "warnings": preview["warnings"], "state": self._state()})
         if path == "/api/goals":
             goals = _clean_goals(body.get("goals"))
             if goals is None:
@@ -804,7 +863,7 @@ class Handler(BaseHTTPRequestHandler):
                     "error": "请选择 .xlsx 格式的课表文件",
                 }, 400)
             try:
-                raw = base64.b64decode(payload)
+                raw = base64.b64decode(payload, validate=True)
             except Exception:
                 return self._json({"ok": False, "error": "文件内容读取失败"}, 400)
             if not raw or len(raw) > 20 * 1024 * 1024:
@@ -852,6 +911,7 @@ class Handler(BaseHTTPRequestHandler):
             items = plan.get("items") or []
             by_id = {str(t.get("id")): t for t in todos}
             enriched = []
+            prof = plan_energy.load_profile()
             for it in items:
                 t = by_id.get(str(it.get("id") or "")) or {}
                 it = dict(it)
@@ -866,7 +926,7 @@ class Handler(BaseHTTPRequestHandler):
                     if start is not None:
                         it["slot_points"] = round(
                             plan_energy.block_points(
-                                start, int(it["duration_min"])), 2)
+                                start, int(it["duration_min"]), prof), 2)
                 enriched.append(it)
             enriched.sort(key=lambda x: (
                 str(x.get("date") or "9999-99-99"),
@@ -887,7 +947,7 @@ class Handler(BaseHTTPRequestHandler):
                 x.setdefault("probability", None)
                 x.setdefault("risk", False)
                 x.setdefault("risk_copy", "")
-            runs = plan_engine.free_runs(todos, today)
+            runs = plan_engine.free_runs(todos, today, profile=prof)
             available = round(sum(r["points"] for r in runs), 2)
             used = round(sum(
                 float(x.get("slot_points") or 0)
@@ -918,13 +978,15 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(deferrals, list):
                 return self._json({"ok": False, "error": "deferrals 需为数组"}, 400)
             cached = _DATE_PLANS.get(iso)
+            now = datetime.now()
+            not_before = _plan_not_before(day, now)
             with todos_transaction() as todos:
-                if cached is not None and cached[0] == _todos_mtime():
+                if cached is not None and cached[0] == _todos_mtime() and cached[2] == not_before:
                     # 优先采纳页面展示的那份排程（含 AI 提议的具体时段），
                     # 避免重新计算时用另一套候选口径而采纳落空
                     plan0 = cached[1]["plan"]
                 else:
-                    plan0 = plan_engine.plan_day(todos, day=day)
+                    plan0 = plan_engine.plan_day(todos, day=day, not_before=not_before)
                 updated, applied_p = plan_engine.apply_placements(
                     todos, plan0, task_ids=[str(x) for x in placements])
                 updated, applied_d = plan_engine.apply_deferrals(
@@ -1091,33 +1153,37 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/api/feedback":
             # 任务完成后的精力反馈：校准精力曲线并记录历史
-            todos = load_todos()
             item_id = str(body.get("id") or "")
-            todo = next((t for t in todos if t.get("id") == item_id), None)
-            if todo is None:
-                return self._json({"ok": False, "error": "事项不存在"}, 404)
             rating = str(body.get("rating") or "ok").strip().lower()
             if rating not in ("easy", "ok", "tough"):
                 return self._json({"ok": False, "error": "rating 需为 easy/ok/tough"}, 400)
-            hm = plan_fields.hm_to_min(str(todo.get("time") or ""))
-            hour = (hm // 60) if hm is not None else datetime.now().hour
-            try:
-                d = date.fromisoformat(str(todo.get("date") or ""))
-            except ValueError:
-                d = date.today()
-            prof = plan_energy.load_profile()
-            prof2 = plan_energy.record_feedback(hour, rating, prof)
-            plan_energy.save_profile(prof2)
-            plan_store.append_event({
-                "type": "rating",
-                "task_id": item_id,
-                "title": str(todo.get("title") or ""),
-                "date": d.isoformat(),
-                "weekday": d.weekday(),
-                "hour": hour,
-                "bucket": plan_risk.bucket_of(hour),
-                "rating": rating,
-            })
+            with todos_transaction() as todos:
+                todo = next((t for t in todos if t.get("id") == item_id), None)
+                if todo is None:
+                    return self._json({"ok": False, "error": "事项不存在"}, 404)
+                if todo.get("status") != "done":
+                    return self._json({"ok": False, "error": "请先完成事项再反馈"}, 400)
+                if todo.get("energy_rating"):
+                    return self._json({"ok": True, "rating": todo["energy_rating"],
+                                       "already_recorded": True, "energy": plan_energy.load_profile()})
+                hm = plan_fields.hm_to_min(str(todo.get("time") or ""))
+                hour = hm / 60 if hm is not None else datetime.now().hour
+                try:
+                    d = date.fromisoformat(str(todo.get("date") or ""))
+                except ValueError:
+                    d = date.today()
+                prof = plan_energy.load_profile()
+                duration = plan_fields.normalize_task(todo)["duration_min"]
+                end = plan_fields.hm_to_min(todo.get("end_time"))
+                if hm is not None and end is not None:
+                    duration = (end - hm) % 1440 or duration
+                prof2 = plan_energy.save_profile(plan_energy.record_feedback(hour, rating, prof, duration))
+                plan_store.append_event({
+                    "type": "rating", "task_id": item_id, "title": str(todo.get("title") or ""),
+                    "date": d.isoformat(), "weekday": d.weekday(), "hour": int(hour),
+                    "bucket": plan_risk.bucket_of(int(hour)), "rating": rating,
+                })
+                todo["energy_rating"] = rating
             try:
                 ai_profile.maybe_refresh_state(minutes=1)
             except Exception:
@@ -1146,12 +1212,13 @@ class Handler(BaseHTTPRequestHandler):
                 chat = str(item.get("chat_username") or "")
                 seq = int(item.get("seq") or 0)
                 title = str((item.get("fields") or {}).get("title") or "").strip()
-                exists = any(
-                    t.get("wx_chat") == chat
-                    and int(t.get("wx_seq") or 0) == seq
-                    and str(t.get("title") or "").strip() == title
-                    for t in todos
-                )
+                exists = any(t.get("source_pending_id") == item_id for t in todos)
+                if not exists and chat != "chat":
+                    exists = any(
+                        not t.get("source_pending_id") and t.get("wx_chat") == chat
+                        and int(t.get("wx_seq") or 0) == seq
+                        and str(t.get("title") or "").strip() == title
+                        for t in todos)
                 if not exists:
                     todo = ai_gateway.make_ai_todo(item, source=item.get("source", "wechat_ai"))
                     if want:
@@ -1195,7 +1262,7 @@ class Handler(BaseHTTPRequestHandler):
             idx = next((i for i, t in enumerate(todos) if t.get("id") == m.group(1)), None)
             if idx is None:
                 return self._json({"ok": False, "error": "事项不存在"}, 404)
-            todo = todos[idx]
+            todo = dict(todos[idx])
             result["was_done"] = todo.get("status") == "done"
             for k, v in body.items():
                 if k not in ALLOWED_FIELDS:
@@ -1225,6 +1292,10 @@ class Handler(BaseHTTPRequestHandler):
                 kind=todo.get("kind"),
                 raw=todo.get("raw") or todo.get("title") or "",
             ))
+            if finalized.get("kind") == kinds.KIND_SCHEDULE and not finalized.get("date"):
+                return self._json({"ok": False, "error": "日程必须包含日期，或改选待办"}, 400)
+            if not str(finalized.get("title") or "").strip():
+                return self._json({"ok": False, "error": "缺少标题"}, 400)
             todos[idx] = finalized
             result["todo"] = finalized
         todo = result["todo"]

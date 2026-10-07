@@ -934,3 +934,16 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .goal-actions button { flex: 1; min-width: 0; }
   .goal-mobile-label { display: block; margin-bottom: 2px; }
 }
+.excel-import { margin-bottom: 20px; }
+.excel-import h2 { margin-top: 0; font-size: 18px; }
+.excel-import input[type="file"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+#todoExcelStatus { margin-top: 12px; }
+#todoExcelWarnings { padding-left: 20px; }
+.excel-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.excel-rows { max-height: 360px; overflow-y: auto; }
+.excel-row { display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.excel-row input { width: 20px; height: 20px; flex-shrink: 0; }
+.excel-row span { min-width: 0; overflow-wrap: anywhere; }
+.excel-row small { display: block; margin-top: 5px; color: var(--ink-2); }
+.excel-row.is-duplicate { opacity: .6; cursor: default; }
+#todoExcelStatus { overflow-wrap: anywhere; }

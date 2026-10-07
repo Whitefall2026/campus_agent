@@ -32,7 +32,7 @@ def _safe_min(hm) -> int | None:
         h, m = (int(x) for x in str(hm).split(":"))
     except (TypeError, ValueError):
         return None
-    if not (0 <= h <= 23 and 0 <= m <= 59):
+    if not (0 <= h <= 23 and 0 <= m <= 59) and (h, m) != (24, 0):
         return None
     return h * 60 + m
 
@@ -76,9 +76,18 @@ def _busy_map(todos: list[dict], include_courses: bool = False) -> dict[str, lis
         except Exception:
             pass
     for t in source:
-        if t.get("status") == "done" or not t.get("date") or not t.get("time"):
+        if kinds.is_todo(t):
             continue
-        busy[t["date"]].append((t["time"], end_time_of(t)))
+        span = _dated_interval(t)
+        if span is None:
+            continue
+        start, end = span
+        day_start = start // 1440 * 1440
+        while day_start < end:
+            iso = date.fromordinal(day_start // 1440).isoformat()
+            s, e = max(start, day_start) - day_start, min(end, day_start + 1440) - day_start
+            busy[iso].append((f"{s // 60:02d}:{s % 60:02d}", f"{e // 60:02d}:{e % 60:02d}"))
+            day_start += 1440
     return busy
 
 
@@ -117,54 +126,52 @@ def _s_to_min(hm: str) -> int:
     return _safe_min(hm) or 0
 
 
+def _dated_interval(item: dict) -> tuple[int, int] | None:
+    """按完整日期转换为分钟区间，跨午夜的事项不丢失次日占用。"""
+    if not _iso_ok(item.get("date")):
+        return None
+    span = _interval_min(item.get("time"), end_time_of(item))
+    if span is None:
+        return None
+    offset = date.fromisoformat(str(item["date"])).toordinal() * 1440
+    return offset + span[0], offset + span[1]
+
+
 def find_conflicts(todos: list[dict]) -> list[dict]:
     """返回冲突列表：同一时间重叠 / 计划时间晚于截止时间。"""
     conflicts = []
-    by_day = defaultdict(list)
+    intervals = []
     for t in todos:
         if (t.get("status") == "done" or kinds.is_todo(t)
                 or not t.get("date") or not t.get("time")):
             continue
-        by_day[t["date"]].append(t)
-    for day, items in by_day.items():
-        items.sort(key=lambda t: _s_to_min(t["time"]))
-        for i in range(len(items)):
-            a = items[i]
-            a_end = end_time_of(a)
-            a_span = _interval_min(a["time"], a_end)
-            if a_span is None:
-                continue
-            a_s, a_e = a_span
-            for j in range(i + 1, len(items)):
-                b = items[j]
-                b_span = _interval_min(b["time"], end_time_of(b))
-                if b_span is None:
-                    continue
-                b_s, b_e = b_span
-                # b 已按开始时间排序；同为跨天区间时用数值比较，避免字符串倒挂。
-                if b_s < a_e and a_s < b_e:
-                    conflicts.append({
-                        "kind": "conflict",
-                        "date": day,
-                        "ids": [a["id"], b["id"]],
-                        "message": (
-                            f"「{a['title']}」与「{b['title']}」时间重叠："
-                            f"{a['time']}-{a_end} 与 {b['time']}-{end_time_of(b)}"
-                        ),
-                    })
+        span = _dated_interval(t)
+        if span:
+            intervals.append((*span, t))
+    intervals.sort(key=lambda x: x[0])
+    for i, (a_s, a_e, a) in enumerate(intervals):
+        for b_s, b_e, b in intervals[i + 1:]:
+            if b_s >= a_e:
+                break
+            conflicts.append({
+                "kind": "conflict", "date": b["date"], "ids": [a["id"], b["id"]],
+                "message": f"「{a['title']}」与「{b['title']}」时间重叠："
+                           f"{a['date']} {a['time']}-{end_time_of(a)} 与 "
+                           f"{b['date']} {b['time']}-{end_time_of(b)}",
+            })
     for t in todos:
         if (t.get("status") == "done" or kinds.is_todo(t)
                 or not t.get("date") or not t.get("time") or not t.get("deadline")):
             continue
         dl_t = t.get("deadline_time") or "23:59"
         try:
-            start = datetime.combine(date.fromisoformat(t["date"]),
-                                     datetime.strptime(t["time"], "%H:%M").time())
             dl = datetime.combine(date.fromisoformat(t["deadline"]),
                                   datetime.strptime(dl_t, "%H:%M").time())
         except (ValueError, TypeError):
             continue  # 脏日期/时间：跳过而不是让整个状态接口 500
-        if start > dl:
+        span = _dated_interval(t)
+        deadline_min = dl.date().toordinal() * 1440 + dl.hour * 60 + dl.minute
+        if span and span[1] > deadline_min:
             conflicts.append({
                 "kind": "deadline",
                 "date": t["date"],
@@ -178,27 +185,23 @@ def slot_conflicts(parsed: dict, todos: list[dict]) -> list[str]:
     """解析预览用：检查新事项与已有事项是否撞时间。"""
     if not parsed.get("date") or not parsed.get("time"):
         return []
-    end = parsed.get("end_time") or end_time_of(parsed)
     others = list(todos)
     try:
         others += [
             e for e in course_mod.term_events()
-            if e.get("date") == parsed["date"]
         ]
     except Exception:
         pass
     msgs = []
-    span = _interval_min(parsed["time"], end)
+    span = _dated_interval(parsed)
     if span is None:
         return []
     p_s, p_e = span
     for t in others:
         if t.get("status") == "done" or not t.get("date") or not t.get("time"):
             continue
-        if t["date"] != parsed["date"]:
-            continue
         t_end = end_time_of(t)
-        other = _interval_min(t["time"], t_end)
+        other = _dated_interval(t)
         if other is None:
             continue
         o_s, o_e = other
@@ -211,7 +214,10 @@ def suggest_slot(todo: dict, todos: list[dict], today: date, now: datetime) -> d
     """为未安排时间的事项建议一个可用时段。"""
     if todo.get("date") or todo.get("status") == "done":
         return None
+    from app.planner import energy, fields
     dur = _dur_min(todo, 90)
+    task = fields.normalize_task(todo)
+    prof = energy.load_profile()
     # 必须把课程表并入忙碌集合：否则和建议页的冲突检测口径相反，
     # 会把待办建议到正在上课的时段。
     busy = _busy_map(todos, include_courses=True)
@@ -221,7 +227,14 @@ def suggest_slot(todo: dict, todos: list[dict], today: date, now: datetime) -> d
         for s in slots:
             if skip_before is not None and _s_to_min(s) < skip_before:
                 continue
+            start_min = _s_to_min(s)
+            if start_min + dur > energy.PLAN_DAY_END:
+                continue
             e = _end_after(s, dur)
+            if day_iso == todo.get("deadline") and e > str(todo.get("deadline_time") or "23:59"):
+                continue
+            if task["energy_cost"] > energy.block_points(start_min, dur, prof) * 1.15:
+                continue
             if not _clash(s, e, busy.get(day_iso, [])):
                 return s, e
         return None
@@ -229,20 +242,27 @@ def suggest_slot(todo: dict, todos: list[dict], today: date, now: datetime) -> d
     if todo.get("deadline"):
         dl = todo["deadline"]
         if dl < today.isoformat():
-            s, e = "09:00", _end_after("09:00", dur)
-            return {"date": today.isoformat(), "time": s, "end_time": e, "reason": "截止日期已过，建议今天尽早处理"}
+            hit = first_free(SUGGEST_SLOTS, today.isoformat(), now_min)
+            if hit:
+                return {"date": today.isoformat(), "time": hit[0], "end_time": hit[1], "reason": "已逾期，建议在今天的可用空档处理"}
+            return None
         if dl == today.isoformat():
             hit = first_free(SUGGEST_SLOTS, dl, now_min)
             if hit:
                 return {"date": dl, "time": hit[0], "end_time": hit[1], "reason": "今天截止，安排在最早的可用空档"}
-            s, e = "21:00", _end_after("21:00", dur)
-            return {"date": dl, "time": s, "end_time": e, "reason": "今天时间紧张，建议今晚完成"}
-        prev_day = (date.fromisoformat(dl) - timedelta(days=1)).isoformat()
-        hit = first_free(["20:00", "19:30", "21:00", "09:00", "10:30"], prev_day)
+            return None
+        try:
+            prev_day = (date.fromisoformat(dl) - timedelta(days=1)).isoformat()
+        except ValueError:
+            return None
+        hit = first_free(["20:00", "19:30", "21:00", "09:00", "10:30"], prev_day,
+                         now_min if prev_day == today.isoformat() else None)
         if hit:
             return {"date": prev_day, "time": hit[0], "end_time": hit[1], "reason": f"截止还有缓冲，建议前一天 {hit[0]} 完成"}
-        s, e = "09:00", _end_after("09:00", dur)
-        return {"date": dl, "time": s, "end_time": e, "reason": "截止当天早上完成"}
+        hit = first_free(SUGGEST_SLOTS, dl)
+        if hit:
+            return {"date": dl, "time": hit[0], "end_time": hit[1], "reason": "安排在截止当天的可用空档"}
+        return None
 
     hit = first_free(SUGGEST_SLOTS, today.isoformat(), now_min)
     if hit:

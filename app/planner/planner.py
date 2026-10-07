@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.core import kinds
-from app.core import courses as course_mod
+from app.core import scheduler
 from app.planner import energy as energy_mod
 from app.planner import fields
 
@@ -51,46 +51,10 @@ REST_COPY = "本时段没有能匹配的任务，标记为休息/机动。"
 # ---------------------------------------------------------------------------
 # 空闲时段
 # ---------------------------------------------------------------------------
-def _interval_min(t: dict) -> tuple | None:
-    """返回 (start_min, end_min)；无开始时间的条目不算占用。"""
-    s = fields.hm_to_min(t.get("time"))
-    if s is None:
-        return None
-    e = fields.hm_to_min(t.get("end_time"))
-    if e is None or e <= s:
-        e = s + int(t.get("duration_min") or 60)
-    return s, e
-
-
 def day_busy(todos: list[dict], day: date, include_courses: bool = True) -> list:
     """某天已被占用的分钟区间列表（日程 + 课程）。"""
-    iso = day.isoformat()
-    busy = []
-    for t in todos:
-        if t.get("status") == "done":
-            continue
-        if str(t.get("date") or "") != iso:
-            continue
-        if kinds.valid_kind(t.get("kind")) != kinds.KIND_SCHEDULE:
-            continue
-        iv = _interval_min(t)
-        if iv:
-            busy.append(iv)
-    if include_courses:
-        try:
-            for ev in course_mod.term_events():
-                if str(ev.get("date") or "") == iso:
-                    iv = _interval_min(ev)
-                    if iv:
-                        busy.append(iv)
-        except Exception:
-            pass  # 课程数据缺失不影响规划
-    busy.sort()
-    return busy
-
-
-def _occupied_at(minute: int, busy: list) -> bool:
-    return any(s <= minute < e for s, e in busy)
+    return sorted((scheduler._safe_min(s), scheduler._safe_min(e))
+                  for s, e in scheduler._busy_map(todos, include_courses).get(day.isoformat(), []))
 
 
 def free_runs(todos: list[dict], day: date, include_courses: bool = True,
@@ -99,12 +63,15 @@ def free_runs(todos: list[dict], day: date, include_courses: bool = True,
 
     返回 [{start: 分钟, end: 分钟, points: 整块可提供能量}]。
     """
+    profile = profile if profile is not None else energy_mod.load_profile()
     busy = day_busy(todos, day, include_courses=include_courses)
     runs = []
     cur = None
     m = PLAN_START
     while m < PLAN_END:
-        free = not _occupied_at(m, busy)
+        # 起点不在日程内不代表整个格子空闲（如日程从 09:10 开始）。
+        free = not any(s < m + STEP and m < e for s, e in busy)
+        free = free and energy_mod.block_points(m, STEP, profile) > 0
         if free and cur is None:
             # 单个 30 分钟空闲格也必须有 end = 起点 + STEP，
             # 否则未与下一格连续时 end == start（0 长度、0 能量）。
@@ -224,6 +191,7 @@ def plan_day(
     candidate_order: list | None = None,
     ai_placements: list | None = None,
     candidate_ids: list | None = None,
+    not_before: int = PLAN_START,
 ) -> dict:
     """为某天生成完整规划方案（纯函数，不落库）。
 
@@ -240,7 +208,11 @@ def plan_day(
     # AI 条目；因此先把「全天空闲总量」留存，作为 budget 的分母，
     # 避免 planned_ratio 被高估（甚至 >1）而误触 load_high。
     day_points = sum(r["points"] for r in runs)
-    if candidate_ids:
+    total_points = energy_mod.available_total(prof)
+    scheduled_points = max(0.0, total_points - day_points)
+    # 预算保留全日口径，排程仅在指定时刻之后，避免把过去时间当作新占用。
+    runs = [dict(r, start=max(r["start"], not_before)) for r in runs if r["end"] > not_before]
+    if candidate_ids is not None:
         idset = {str(x) for x in candidate_ids}
         raw = [
             t for t in todos
@@ -382,6 +354,10 @@ def plan_day(
         "available_points": round(day_points, 2),
         "planned_points": round(used_pts, 2),
         "planned_ratio": round(used_pts / day_points, 3) if day_points else 0.0,
+        "total_points": round(total_points, 2),
+        "scheduled_points": round(scheduled_points, 2),
+        "committed_ratio": round((scheduled_points + used_pts) / total_points, 3) if total_points else 0.0,
+        "include_courses": include_courses,
     }
 
     # 相邻的休息/机动格子合并成整段（避免逐格刷屏）

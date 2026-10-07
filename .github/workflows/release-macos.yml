@@ -1,0 +1,103 @@
+name: macOS release packages
+
+on:
+  push:
+    tags: [v2.1]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to build and upload to
+        required: true
+        default: v2.1
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-release-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Official runner architecture table:
+          # https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+          - runner: macos-14
+            arch: arm64
+            python_arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+            python_arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      RUC_AGENT_BUILD_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python_arch }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify release version
+        run: |
+          set -euo pipefail
+          version="$(python -B -c 'from app.version import __version__; print(__version__)')"
+          [[ "$RELEASE_TAG" == "v$version" ]]
+      - name: Install macOS build dependencies
+        run: python -m pip install -r packaging/requirements-macos.txt
+      - name: Test, freeze, smoke-test and create DMG
+        run: bash packaging/build_macos.sh
+      - name: Preserve packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: RUC-Agent-macos-${{ matrix.arch }}
+          path: |
+            dist/macos/*.dmg
+            dist/macos/SHA256SUMS-*.txt
+          if-no-files-found: error
+      # Release creation/publication belongs to the coordinating release task.
+      # A draft may be created before the tag push; both architectures upload
+      # distinct asset names and never change the release's published state.
+      - name: Upload to existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in {1..10}; do
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            echo "Waiting for release $RELEASE_TAG ($attempt/10)"
+            sleep 15
+          done
+          if [[ "$ready" != true ]]; then
+            echo "Create the release (a draft is sufficient), then rerun the upload job." >&2
+            exit 1
+          fi
+          for attempt in {1..5}; do
+            if gh release upload "$RELEASE_TAG" dist/macos/*.dmg dist/macos/SHA256SUMS-*.txt --clobber; then
+              exit 0
+            fi
+            echo "Upload retry $attempt/5"
+            sleep 10
+          done
+          exit 1

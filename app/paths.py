@@ -1,7 +1,8 @@
 """应用资源与用户数据路径。
 
-源码运行时仍使用仓库内的 ``data/``；PyInstaller 安装版把只读静态资源
-放在程序包内，把可写数据放到当前用户的 LocalAppData。这样应用安装在
+Windows 源码运行时仍使用仓库内的 ``data/``；PyInstaller 安装版把只读静态资源
+放在程序包内，把可写数据放到当前用户的 LocalAppData 或 macOS 的
+Library/Application Support。这样应用安装在
 受保护目录后，日程、配置和 API Key 仍能正常保存，升级时也不会被覆盖。
 """
 from __future__ import annotations
@@ -25,6 +26,10 @@ ROOT = RESOURCE_ROOT
 
 
 def _default_data_dir() -> str:
+    if sys.platform == "darwin":
+        return os.path.join(
+            os.path.expanduser("~"), "Library", "Application Support", APP_DIR_NAME, "data"
+        )
     if not FROZEN:
         return os.path.join(SOURCE_ROOT, "data")
     local = os.environ.get("LOCALAPPDATA")
