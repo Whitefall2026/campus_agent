@@ -17,8 +17,8 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
-from datetime import date, timedelta
-from http.server import ThreadingHTTPServer
+from datetime import date, datetime, timedelta
+from app.web.server import LocalHTTPServer
 from unittest.mock import patch
 
 # 测试隔离：必须在导入 app.* 之前生效，否则 app.paths 会把数据目录锁到仓库 data/。
@@ -31,6 +31,13 @@ from app.paths import DATA_DIR
 from app.ai import gateway as ai_gateway
 from app.web.handlers import Handler
 
+
+class MorningClock(datetime):
+    """排程用例总有可用的当天窗口，不依赖运行时是否已到夜间。"""
+    @classmethod
+    def now(cls, tz=None):
+        return super().now(tz).replace(hour=9, minute=0, second=0, microsecond=0)
+
 TOUCHED = ["todos.json", "goals.json", "planner_profile.json",
            "planner_events.json", "ai_config.json", "user_profile.json",
            "user_evidence.json", "user_memory.json", "user_state_history.json",
@@ -40,7 +47,10 @@ TOUCHED = ["todos.json", "goals.json", "planner_profile.json",
 class TestApiIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        clock = patch("app.web.handlers.datetime", MorningClock)
+        clock.start()
+        cls.addClassCleanup(clock.stop)
+        cls.server = LocalHTTPServer(("127.0.0.1", 0), Handler)
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -80,7 +90,8 @@ class TestApiIntegration(unittest.TestCase):
             with urllib.request.urlopen(r, timeout=15) as resp:
                 return resp.status, json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read().decode("utf-8") or "{}")
+            with e:
+                return e.code, json.loads(e.read().decode("utf-8") or "{}")
 
     def _reset_plan(self):
         """清空待办并重置今日排程缓存，保证每个用例从确定状态开始。"""

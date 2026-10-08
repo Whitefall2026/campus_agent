@@ -36,3 +36,10 @@ desktop.ini
 
 # 测试运行输出
 tests/run_result.txt
+
+# 个人材料与本机配置不随源码发布
+materials/
+.pytest_cache/
+.env
+.env.*
+!.env.example

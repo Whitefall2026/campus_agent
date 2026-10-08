@@ -23,7 +23,8 @@ from app.ai import evidence as user_evidence
 from app.ai import memory as user_memory
 from app.core import kinds
 from app.core import courses as course_mod
-from app.core.scheduler import SUGGEST_SLOTS, end_time_of
+from app.core.scheduler import SUGGEST_SLOTS, end_time_of, _busy_map as schedule_busy_map
+from app.planner import energy as energy_mod, fields as task_fields
 from app.core.storage import load_todos
 from app.paths import DATA_DIR
 
@@ -103,22 +104,8 @@ def _unplanned_todos(todos: list) -> list:
 def _busy_map(days: int = PLAN_DAYS) -> dict:
     """返回 {date_iso: [(start, end), ...]}，含已有日程与课程。"""
     start = _now().date()
-    busy = {}
     todos = load_todos()
-    for t in todos:
-        if t.get("status") == "done":
-            continue
-        if kinds.valid_kind(t.get("kind")) != kinds.KIND_SCHEDULE:
-            continue
-        if not t.get("date") or not t.get("time"):
-            continue
-        busy.setdefault(t["date"], []).append((t["time"], end_time_of(t)))
-    try:
-        for ev in course_mod.term_events():
-            if ev.get("date") and ev.get("time"):
-                busy.setdefault(ev["date"], []).append((ev["time"], ev["end_time"]))
-    except Exception:
-        pass
+    busy = schedule_busy_map(todos, include_courses=True)
     out = {}
     for i in range(days):
         iso = (start + timedelta(days=i)).isoformat()
@@ -158,7 +145,7 @@ def _rule_choice(t, busy: dict, start_date: date, taken: dict | None = None) -> 
         except ValueError:
             pass
     if last_day < first_day:
-        first_day = last_day
+        return None
     now_hm = _now().strftime("%H:%M")
     try:
         dur = int(t.get("duration_min") or 60)
@@ -176,6 +163,14 @@ def _rule_choice(t, busy: dict, start_date: date, taken: dict | None = None) -> 
             if d == today and slot <= now_hm:
                 continue
             end = end_time_of({"time": slot, "duration_min": dur})
+            if not end or end <= slot or end > "23:00":
+                continue
+            if iso == deadline and end > str(t.get("deadline_time") or "23:59"):
+                continue
+            start_min = task_fields.hm_to_min(slot)
+            cost = task_fields.normalize_task(t)["energy_cost"]
+            if cost > energy_mod.block_points(start_min, dur, energy_mod.load_profile()) * 1.15:
+                continue
             if end and not _clash(slot, end, intervals):
                 if deadline and iso <= deadline:
                     reason = f"截止日当天，安排最早的可用空档" if iso == deadline \
@@ -233,26 +228,13 @@ def _energy_context_lines() -> list:
     数据文件可能尚不存在（引擎未运行过），此时返回空列表即可。
     """
     out = []
-    profile_path = os.path.join(DATA_DIR, "planner_profile.json")
     events_path = os.path.join(DATA_DIR, "planner_events.json")
-    try:
-        with open(profile_path, "r", encoding="utf-8") as f:
-            profile = json.load(f)
-        hours = profile.get("hours") if isinstance(profile, dict) else None
-        if isinstance(hours, list) and len(hours) == 24 and all(
-            isinstance(v, (int, float)) for v in hours
-        ):
-            peak = max(range(24), key=lambda i: hours[i])
-            if hours[peak] > 0:
-                out.append(
-                    "精力曲线：{} 点前后是高峰（系数 {:.2f}），"
-                    "8-10 点均值 {:.2f}，深夜不排。".format(
-                        peak, hours[peak],
-                        sum(hours[8:11]) / 3,
-                    )
-                )
-    except (OSError, ValueError, TypeError, KeyError):
-        pass
+    hours = energy_mod.load_profile()["hours"]
+    peak = max(range(7, 23), key=lambda i: hours[i])
+    if hours[peak] > 0:
+        out.append("精力曲线：{} 点前后是高峰（系数 {:.2f}），"
+                   "8-10 点均值 {:.2f}，深夜不排。".format(
+                       peak, hours[peak], sum(hours[8:11]) / 3))
     try:
         with open(events_path, "r", encoding="utf-8") as f:
             events = json.load(f)
@@ -260,6 +242,8 @@ def _energy_context_lines() -> list:
             recent = events[-200:]
             counts = {}
             for ev in recent:
+                if not isinstance(ev, dict):
+                    continue
                 kind = str((ev or {}).get("type") or (ev or {}).get("kind") or "?")
                 counts[kind] = counts.get(kind, 0) + 1
             total = sum(counts.values())
@@ -272,16 +256,8 @@ def _energy_context_lines() -> list:
 
 
 def _energy_hours() -> list:
-    """读取精力曲线的 07-23 点系数；文件缺失/异常时返回空列表。"""
-    try:
-        with open(os.path.join(DATA_DIR, "planner_profile.json"),
-                  "r", encoding="utf-8") as f:
-            hours = (json.load(f) or {}).get("hours") or []
-        if isinstance(hours, list) and len(hours) >= 23:
-            return [float(x) for x in hours[7:23]]
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        pass
-    return []
+    """读取精力曲线的 07-23 点系数；文件缺失/异常时使用冷启动曲线。"""
+    return energy_mod.load_profile()["hours"][7:23]
 
 
 def _parse_ai_plan(content: str):
@@ -351,7 +327,10 @@ def _parse_selective_plan(content: str):
 
 def _norm_time(v):
     v = str(v or "").strip()
-    return v if TIME_RE.match(v) else None
+    if not TIME_RE.match(v):
+        return None
+    h, m = v.split(":")
+    return f"{int(h):02d}:{int(m):02d}"
 
 
 def _safe_plan_item(raw: dict, t, busy: dict, start_date: date) -> dict | None:
@@ -375,6 +354,17 @@ def _safe_plan_item(raw: dict, t, busy: dict, start_date: date) -> dict | None:
         return None
     deadline = str(t.get("deadline") or "")
     if deadline and DATE_RE.match(deadline) and d > deadline:
+        return None
+    if d == deadline and e > str(t.get("deadline_time") or "23:59"):
+        return None
+    if s < "07:00" or e > "23:00":
+        return None
+    duration = task_fields.hm_to_min(e) - task_fields.hm_to_min(s)
+    task = task_fields.normalize_task(t)
+    if duration < task["duration_min"]:
+        return None
+    if task["energy_cost"] > energy_mod.block_points(
+            task_fields.hm_to_min(s), duration, energy_mod.load_profile()) * 1.15:
         return None
     return {
         "id": t["id"],
@@ -673,16 +663,20 @@ def guide_day_order(todos: list, day_iso: str,
     except ValueError:
         return {"order": [], "note": "", "advice": [], "placements": []}
     iso = day.isoformat()
-    if not rejections:
+    signature = []
+    for name in ("todos.json", "courses.json", "planner_profile.json", "planner_events.json"):
         try:
-            todos_mtime = os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
+            info = os.stat(os.path.join(DATA_DIR, name))
+            signature.append((info.st_mtime_ns, info.st_size))
         except OSError:
-            todos_mtime = 0
-        hit = _GUIDE_CACHE.get((iso, todos_mtime))
+            signature.append((0, 0))
+    key = (iso, tuple(signature), tuple(candidate_ids) if candidate_ids is not None else None)
+    if not rejections:
+        hit = _GUIDE_CACHE.get(key)
         if hit and time.time() - hit[0] < GUIDE_TTL:
             return {k: list(v) if isinstance(v, list) else v
                     for k, v in hit[1].items()}
-    if candidate_ids:
+    if candidate_ids is not None:
         idset = {str(x) for x in candidate_ids}
         cands = [
             t for t in todos
@@ -816,7 +810,7 @@ def guide_day_order(todos: list, day_iso: str,
             todos_mtime = os.path.getmtime(os.path.join(DATA_DIR, "todos.json"))
         except OSError:
             todos_mtime = 0
-        _GUIDE_CACHE[(iso, todos_mtime)] = (time.time(), result)
+        _GUIDE_CACHE[key] = (time.time(), result)
         if len(_GUIDE_CACHE) > 40:
             old = sorted(_GUIDE_CACHE.items(), key=lambda kv: kv[1][0])[:20]
             for k, _v in old:

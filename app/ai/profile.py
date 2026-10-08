@@ -182,26 +182,17 @@ def derive_from_planner() -> dict | None:
     today_iso = now.date().isoformat()
 
     # ---- 精力：当前时刻系数 + 近期反馈 ----
-    hours = []
-    events = []
-    try:
-        with open(os.path.join(DATA_DIR, "planner_profile.json"), "r",
-                  encoding="utf-8") as f:
-            hours = (json.load(f) or {}).get("hours") or []
-    except (OSError, json.JSONDecodeError):
-        pass
-    try:
-        with open(os.path.join(DATA_DIR, "planner_events.json"), "r",
-                  encoding="utf-8") as f:
-            events = json.load(f) or []
-    except (OSError, json.JSONDecodeError):
-        pass
-    hour_coef = 0.5
-    if isinstance(hours, list) and len(hours) == 24 and all(
-        isinstance(v, (int, float)) for v in hours
-    ):
-        hour_coef = float(hours[now.hour])
-    recent = [e for e in events if isinstance(e, dict)][-200:]
+    from app.planner import energy as energy_mod, store, shield, planner
+    prof = energy_mod.load_profile()
+    hour_coef = energy_mod.coefficient_at(now.hour, prof)
+    # 短期疲劳只看过去七天的体感反馈，不能让几个月前的事件永久影响状态。
+    cutoff = (now - timedelta(days=7)).isoformat()
+    latest_ratings = {}
+    for e in store.load_events():
+        if (isinstance(e, dict) and e.get("type") == "rating"
+                and cutoff <= str(e.get("created_at") or "") <= now.isoformat()):
+            latest_ratings[(e.get("task_id"), e.get("date"))] = e
+    recent = list(latest_ratings.values())
     tough = sum(1 for e in recent if e.get("rating") == "tough")
     easy = sum(1 for e in recent if e.get("rating") == "easy")
     if tough >= 3 and tough >= easy * 2:
@@ -214,27 +205,33 @@ def derive_from_planner() -> dict | None:
         energy = "high"
 
     # ---- 事务负载 ----
-    next7 = (now.date() + timedelta(days=7)).isoformat()
+    next7 = (now.date() + timedelta(days=6)).isoformat()
     load_events = sum(
-        1 for e in course_events
-        if e.get("date") and today_iso <= str(e["date"]) <= next7
+        1 for e in course_events + todos
+        if e.get("date") and e.get("status") != "done"
+        and str(e.get("kind") or "") == "schedule"
+        and today_iso <= str(e["date"]) <= next7
     )
-    if pending_count >= 7 or load_events >= 10:
-        task_load = "high"
-    elif pending_count >= 4 or load_events >= 6:
-        task_load = "medium"
-    else:
-        task_load = "low"
+    combined = todos + course_events
+    plan = planner.plan_day(combined, day=now.date(), profile=prof, include_courses=False,
+                            candidate_ids=[])
+    # 画像依据真实日程与近期需求，不将尚未采纳的方案算成既定安排。
+    plan["entries"] = []
+    plan["meta"]["load_high"] = False
+    budget = plan["budget"]
+    budget["planned_points"] = 0
+    budget["committed_ratio"] = budget["scheduled_points"] / budget["total_points"] if budget["total_points"] else 0
+    task_load = shield.load_metrics(combined, day=now.date(), plan=plan)["level"]
 
     # ---- 外部压力：近 5 天硬线 / 密集截止 ----
-    next5 = (now.date() + timedelta(days=5)).isoformat()
+    next5 = (now.date() + timedelta(days=4)).isoformat()
     hard = 0
     upcoming = 0
     for t in todos:
         dl = str(t.get("deadline") or "")
         if not dl or t.get("status") == "done":
             continue
-        if today_iso <= dl <= next5:
+        if dl <= next5:
             if str(t.get("deadline_type") or "").lower() == "hard" \
                     or not str(t.get("deadline_type") or ""):
                 hard += 1

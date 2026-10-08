@@ -18,22 +18,16 @@ import re
 import shutil
 import threading
 import uuid
-import xml.etree.ElementTree as ET
-import zipfile
 from datetime import date, datetime, timedelta
 
 from app.paths import DATA_DIR
+from app.core.xlsx import read_sheets as _read_sheets
 
 COURSES_FILE = os.path.join(DATA_DIR, "courses.json")
 
 # 2026-2027 学年秋季学期第 1 周周一（用户可从 courses.json 调整）。
 DEFAULT_TERM_START = "2026-09-07"
 
-NS = {
-    "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-}
-_M = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 _CN_WEEKDAYS = {
     "星期一": 1, "星期二": 2, "星期三": 3, "星期四": 4, "星期五": 5,
     "星期六": 6, "星期日": 7, "星期天": 7,
@@ -57,70 +51,6 @@ def _now_iso() -> str:
 # ---------------------------------------------------------------------------
 # xlsx 读取（标准库）
 # ---------------------------------------------------------------------------
-def _col_index(ref: str) -> int:
-    m = re.match(r"([A-Z]+)", ref or "")
-    if not m:
-        return 0
-    n = 0
-    for ch in m.group(1):
-        n = n * 26 + ord(ch) - 64
-    return n - 1
-
-
-def _inline_text(node) -> str:
-    return "".join(t.text or "" for t in node.iter(_M + "t"))
-
-
-def _read_sheets(path: str) -> list:
-    """返回 [{name, rows:[{col:int, value:str}, ...]}...]。"""
-    with zipfile.ZipFile(path) as z:
-        names = z.namelist()
-        shared = []
-        if "xl/sharedStrings.xml" in names:
-            root = ET.fromstring(z.read("xl/sharedStrings.xml"))
-            for si in root.findall(_M + "si"):
-                shared.append(_inline_text(si))
-
-        wb = ET.fromstring(z.read("xl/workbook.xml"))
-        rid_key = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
-        sheets = [(s.get("name"), s.get(rid_key)) for s in wb.iter(_M + "sheet")]
-        rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
-        rel_map = {rel.get("Id"): rel.get("Target") for rel in rels}
-
-        out = []
-        for name, rid in sheets:
-            # Target 可能是相对路径（worksheets/sheet1.xml）或绝对路径（/xl/...）
-            target = (rel_map.get(rid) or "").lstrip("/")
-            if not target.startswith("xl/"):
-                target = "xl/" + target
-            if target not in names:
-                raise ValueError(f"课表缺少工作表文件：{target}")
-            root = ET.fromstring(z.read(target))
-            rows = []
-            for row in root.iter(_M + "row"):
-                cells = {}
-                for c in row.findall(_M + "c"):
-                    ref = c.get("r")
-                    t = c.get("t")
-                    v = c.find(_M + "v")
-                    val = ""
-                    if t == "s" and v is not None and v.text is not None:
-                        try:
-                            val = shared[int(v.text)]
-                        except (ValueError, IndexError):
-                            val = v.text
-                    elif t == "inlineStr":
-                        isel = c.find(_M + "is")
-                        if isel is not None:
-                            val = _inline_text(isel)
-                    elif v is not None:
-                        val = v.text or ""
-                    if val != "":
-                        cells[_col_index(ref)] = str(val)
-                if cells:
-                    rows.append(cells)
-            out.append({"name": name, "rows": rows})
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +78,8 @@ def _day_map(row: dict) -> dict:
 
 def _parse_weeks(text: str) -> list:
     """从 “1-16周(单)/1,3,5周/9周” 提取周次列表（按单双周过滤）。"""
-    m = _WEEK_RANGE_RE.search(text or "")
+    text = str(text or "").replace("～", "-").replace("~", "-").replace("至", "-")
+    m = _WEEK_RANGE_RE.search(text)
     if not m:
         return []
     parity = m.group("par")
@@ -196,6 +127,8 @@ def _parse_block(text: str) -> dict | None:
     elif "/" in detail:
         loc = detail.split("/", 1)[0].strip()
     if not weeks:
+        if "周" in detail:
+            raise ValueError("课程周次无法识别，请检查周次范围与单双周标记")
         weeks = list(range(1, 17))  # 解析不到周次时按整学期处理
     return {
         "name": name,

@@ -38,7 +38,7 @@ MODERATE_UNDONE = 3
 
 
 def _task_density(todos: list[dict], day: date, days: int = 3) -> int:
-    end = (day + timedelta(days=days)).isoformat()
+    end = (day + timedelta(days=days - 1)).isoformat()
     start = day.isoformat()
     return sum(
         1 for t in todos
@@ -66,27 +66,55 @@ def load_metrics(todos: list[dict], day: date | None = None,
         and str(t.get("date") or "") == iso
     ]
     budget = plan.get("budget") or {}
-    ratio = float(budget.get("planned_ratio") or 0.0)
-    planned_energy = float(budget.get("planned_points") or 0.0)
+    # 总负载包含既有日程/课程；未采纳的方案不能冒充真实占用。
+    ratio = float(budget.get("committed_ratio", budget.get("planned_ratio")) or 0.0)
+    scheduled = float(budget.get("scheduled_points") or 0.0)
+    planned_energy = scheduled + float(budget.get("planned_points") or 0.0)
+    horizon = (day + timedelta(days=2)).isoformat()
+    relevant = [t for t in undone
+                if not str(t.get("plan_defer_to") or "") > horizon
+                and (not t.get("deadline") or str(t["deadline"]) <= horizon)]
+    effort = sum(fields.normalize_task(t)["energy_cost"] for t in relevant)
+    total = float(budget.get("total_points") or 0.0)
+    # 待办耗能相对于未来三天实际空闲量，而不是仅按整池条数判忙。
+    capacity = float(budget.get("available_points") or 0.0)
+    from app.planner import energy
+    prof = energy.load_profile()
+    for offset in (1, 2):
+        capacity += sum(r["points"] for r in planner.free_runs(
+            todos, day + timedelta(days=offset), profile=prof,
+            include_courses=budget.get("include_courses", True)))
+    demand_ratio = effort / capacity if capacity else (1.0 if effort else 0.0)
+    due_today = sum(fields.normalize_task(t)["energy_cost"] for t in relevant
+                    if t.get("deadline") and str(t["deadline"]) <= iso)
+    if total:
+        ratio = max(ratio, (scheduled + due_today) / total)
+    blocked = bool(plan.get("meta", {}).get("load_high"))
     reasons = []
     level = "low"
-    if len(undone) >= HEAVY_UNDONE or ratio >= HEAVY_RATIO:
+    if len(relevant) >= HEAVY_UNDONE or ratio >= HEAVY_RATIO or demand_ratio >= HEAVY_RATIO or blocked:
         level = "high"
-    elif len(undone) >= MODERATE_UNDONE or ratio >= 0.7:
+    elif len(relevant) >= MODERATE_UNDONE or ratio >= 0.7 or demand_ratio >= 0.7:
         level = "medium"
-    if len(undone) >= MODERATE_UNDONE:
-        reasons.append("未完成待办 {} 项".format(len(undone)))
+    if len(relevant) >= MODERATE_UNDONE:
+        reasons.append("近期需处理待办 {} 项（全部未完成 {} 项）".format(len(relevant), len(undone)))
     if ratio >= 0.7:
-        reasons.append("今日已排满 {}%（{} 点能量）".format(
+        reasons.append("今日占用及到期负荷约 {}%（已排 {} 点能量）".format(
             int(ratio * 100), round(planned_energy, 1)))
     if plan.get("meta", {}).get("load_high"):
         reasons.append("有硬线任务未排入当天方案")
+    if demand_ratio >= 0.7:
+        reasons.append("近期待办耗能约 {} 点，占未来三天空闲能量 {}%".format(
+            effort, round(demand_ratio * 100)))
     if not reasons:
         reasons.append("安排宽松，还有空闲能量")
     return {
         "level": level,
         "day": iso,
         "undone_todos": len(undone),
+        "near_term_todos": len(relevant),
+        "near_term_energy": effort,
+        "demand_ratio_3d": round(demand_ratio, 3),
         "today_schedules": len(sched),
         "density_3d": _task_density(todos, day),
         "planned_energy": round(planned_energy, 1),

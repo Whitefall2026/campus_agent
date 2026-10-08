@@ -20,7 +20,7 @@ import threading
 import uuid
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from app.core.extractor import parse_text
 from app.core import kinds
@@ -602,10 +602,15 @@ def add_pending(entry: dict, data_dir: str | None = None) -> dict:
         # 同一条消息可能产出多条日程（选课、彩排…），所以去重键必须包含标题，
         # 不能只按“会话 + 消息序号”去重，否则后面的日程会被当成重复丢掉。
         def key(p):
+            if p.get("chat_username") == "chat":
+                return ("chat", str(p.get("id") or ""))
+            fields = p.get("fields") or {}
             return (
                 str(p.get("chat_username") or ""),
                 int(p.get("seq") or 0),
-                str((p.get("fields") or {}).get("title") or "").strip(),
+                str(fields.get("title") or "").strip(),
+                *(str(fields.get(k) or "") for k in
+                  ("date", "time", "end_time", "deadline", "deadline_time")),
             )
 
         k = key(entry)
@@ -686,10 +691,10 @@ def _anchor_passed(date_s, time_s) -> bool:
     t = str(time_s or "").strip()
     m = re.match(r"^(\d{1,2}):(\d{2})$", t)
     if m:
-        end = datetime.combine(
-            d,
-            datetime.strptime("%s:%s" % (m.group(1), m.group(2)), "%H:%M").time(),
-        )
+        try:
+            end = datetime.combine(d, datetime.strptime(t, "%H:%M").time())
+        except ValueError:
+            return d < now.date()
         return end < now
     return d < now.date()
 
@@ -701,8 +706,17 @@ def is_pending_expired(fields: dict) -> bool:
     只要还有任意一个锚点没过去（例如截止在明天），就继续显示。
     """
     f = fields or {}
+    event_day = f.get("date")
+    if event_day and f.get("time") and f.get("end_time"):
+        try:
+            start = datetime.strptime(str(f["time"]), "%H:%M").time()
+            end = datetime.strptime(str(f["end_time"]), "%H:%M").time()
+            if end <= start:
+                event_day = (date.fromisoformat(str(event_day)) + timedelta(days=1)).isoformat()
+        except (ValueError, TypeError):
+            pass
     anchors = [
-        (f.get("date"), f.get("end_time") or f.get("time")),
+        (event_day, f.get("end_time") or f.get("time")),
         (f.get("deadline"), f.get("deadline_time")),
     ]
     anchors = [(d, t) for d, t in anchors if d]
@@ -736,6 +750,7 @@ def make_ai_todo(entry: dict, source: str = "wechat_ai") -> dict:
         "status": "pending",
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "source": source,
+        "source_pending_id": str(entry.get("id") or ""),
         "wx_chat": str(entry.get("chat_username") or ""),
         "wx_chat_name": str(entry.get("chat_display") or entry.get("chat_username") or ""),
         "wx_sender": str(entry.get("sender") or ""),

@@ -128,7 +128,25 @@
   <section class="page page-todos hidden" data-page="todos">
     <div class="page-head">
       <h1>待办</h1>
-      <p class="page-sub">没有固定时间的任务（含截止时间）。可手动“规划到日程”，之后将接入 AI 自动排期</p>
+      <p class="page-sub">没有固定时间的任务（含截止时间）。可手动规划到日程，或使用计划页的智能排期</p>
+    </div>
+
+    <div class="card excel-import">
+      <h2>从 Excel 提取待办</h2>
+      <p class="muted">支持 .xlsx，最多 20MB。建议列名：任务名称、截止时间、优先级、预计时长（分钟）。本地解析，确认后导入。</p>
+      <button type="button" class="ghost small" id="todoExcelChoose">选择 Excel 文件</button>
+      <input type="file" id="todoExcelFile" accept=".xlsx" aria-label="选择待办 Excel 表格">
+      <p id="todoExcelStatus" role="status" aria-live="polite"></p>
+      <div id="todoExcelPreview" class="hidden">
+        <div class="excel-actions">
+          <button id="todoExcelAll" class="ghost small">全选</button>
+          <button id="todoExcelNone" class="ghost small">取消全选</button>
+          <button id="todoExcelImport" class="primary small">导入选中待办</button>
+          <button id="todoExcelCancel" class="ghost small">取消</button>
+        </div>
+        <div id="todoExcelRows" class="excel-rows"></div>
+        <ul id="todoExcelWarnings" class="muted"></ul>
+      </div>
     </div>
 
     <div class="todo-bar">

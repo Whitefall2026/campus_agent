@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import math
 import threading
 
 from app.planner import store
@@ -47,14 +48,12 @@ def load_profile(data_dir: str | None = None) -> dict:
     """读 profile；文件缺失/损坏时回退默认曲线。"""
     with _LOCK:
         prof = store.load_profile(data_dir)
-        hours = list(prof.get("hours") or [])
-        if len(hours) != 24 or not all(
-            isinstance(v, (int, float)) for v in hours
-        ):
+        hours = prof.get("hours")
+        if not _valid_hours(hours):
             return default_profile()
         return {
             "hours": hours,
-            "version": int(prof.get("version") or 1),
+            "version": 1,
             "updated_at": prof.get("updated_at"),
         }
 
@@ -68,15 +67,24 @@ def clamp(v: float) -> float:
     return max(COEF_MIN, min(COEF_MAX, v))
 
 
+def _valid_hours(hours) -> bool:
+    return isinstance(hours, list) and len(hours) == 24 and all(
+        isinstance(v, (int, float)) and not isinstance(v, bool)
+        and math.isfinite(v) and 0 <= v <= COEF_MAX for v in hours)
+
+
 def coefficient_at(hour_float: float, profile: dict | None = None) -> float:
     """某一时刻的精力系数（hour_float 可为小数，取所在整小时）。"""
     prof = profile or default_profile()
-    hours = list(prof.get("hours") or DEFAULT_HOUR_COEF)
+    hours = prof.get("hours")
+    if not _valid_hours(hours):
+        hours = DEFAULT_HOUR_COEF
     try:
-        h = int(float(hour_float)) % 24
-    except (TypeError, ValueError):
-        h = 0
-    if h < 0 or h >= len(hours):
+        value = float(hour_float)
+        h = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not 0 <= value < 24 or h < PLAN_DAY_START // 60 or h >= PLAN_DAY_END // 60:
         return 0.0
     return float(hours[h])
 
@@ -89,7 +97,8 @@ def block_points(start_min: int, dur_min: int,
     """
     prof = profile or default_profile()
     total = 0.0
-    end = start_min + dur_min
+    end = min(24 * 60, start_min + max(0, dur_min))
+    start_min = max(0, start_min)
     # 起点对齐到半小时格子
     cell = start_min - (start_min % 30)
     while cell < end:
@@ -102,20 +111,33 @@ def block_points(start_min: int, dur_min: int,
 
 def available_total(profile: dict | None = None) -> float:
     """一天（07:00~23:00）无课程占用时的理论总能量（点数）。"""
-    return sum(coefficient_at(h, profile) for h in range(PLAN_DAY_START // 60, PLAN_DAY_END // 60))
+    return block_points(PLAN_DAY_START, PLAN_DAY_END - PLAN_DAY_START, profile)
 
 
-def record_feedback(hour_float, rating: str, profile: dict | None = None) -> dict:
+def record_feedback(hour_float, rating: str, profile: dict | None = None,
+                    duration_min: int = 30) -> dict:
     """按「轻松/吃力」反馈做一次 EMA 校准，返回更新后的 profile。"""
     prof = {k: list(v) if isinstance(v, list) else v for k, v in
             (profile or default_profile()).items()} or default_profile()
-    if "hours" not in prof or len(prof["hours"]) != 24:
+    if not _valid_hours(prof.get("hours")):
         prof = default_profile()
     hours = list(prof["hours"])
     delta = FEEDBACK_DELTA.get(str(rating or "").strip().lower())
     if delta is None:
         return prof
-    h = int(float(hour_float)) % 24
-    hours[h] = clamp(hours[h] + EMA_RATE * delta)
+    try:
+        start = float(hour_float) * 60
+        duration = max(1, float(duration_min))
+    except (TypeError, ValueError, OverflowError):
+        return prof
+    if not math.isfinite(start) or not math.isfinite(duration) or not 0 <= start < 1440:
+        return prof
+    # 一次反馈按任务覆盖的小时分配权重，避免长任务只校准起始小时。
+    # 睡眠和用户设为不可用的零系数时段保持为零。
+    for h in range(PLAN_DAY_START // 60, PLAN_DAY_END // 60):
+        overlap = max(0, min((h + 1) * 60, start + duration) - max(h * 60, start))
+        if overlap and hours[h] > 0:
+            hours[h] = clamp(hours[h] + EMA_RATE * delta * overlap / duration)
     prof["hours"] = hours
+    prof["updated_at"] = None  # 保存时生成新的校准时间。
     return prof

@@ -5,7 +5,7 @@
 ----
 - 历史依据来自 planner_events.json 的 done/rating 事件：每条带
   weekday(0~6)、时段 bucket、rating(easy/ok/tough)，用于聚合
-  「星期几+时段」的历史完成率（数据不足时回退到默认值）；
+  「星期几+时段」的体感加权基线（数据不足时回退到默认值）；
 - record_done 负责在用户勾选完成时记录（供模块 3.1）。
 
 算法
@@ -42,7 +42,7 @@ BUCKET_LABEL = {"morning": "上午", "afternoon": "下午", "evening": "晚上"}
 WEEKDAY_LABEL = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
 COPY_RISK = (
-    "根据你过往{when}时段完成率约 {rate}% 的记录，这项任务今日完成有风险。"
+    "结合{when}时段的反馈与负载，模型估计完成概率约 {rate}%，建议留出余量。"
     "建议先做小步尝试：拆成「{split_hint}」级别的子任务，"
     "或者把它提前到状态更好的时段；也可以降低这一步的完成标准。"
 )
@@ -67,8 +67,15 @@ def load_history_stats(events: list | None = None) -> dict:
     """
     if events is None:
         events = store.load_events()
+    # 完成事件和随后体感反馈属于同一次观察，后者替换前者，不能双计。
+    latest = {}
+    for i, ev in enumerate(events):
+        if not isinstance(ev, dict) or ev.get("type") not in ("done", "rating"):
+            continue
+        key = (str(ev.get("task_id")), str(ev.get("date"))) if ev.get("task_id") else (i,)
+        latest[key] = ev
     buckets: dict[tuple, list] = {}
-    for ev in events:
+    for ev in latest.values():
         if str(ev.get("type") or "") not in ("done", "rating"):
             continue
         try:
@@ -138,7 +145,8 @@ def _entry_modifiers(e: dict, plan: dict) -> float:
         p += 0.03                    # 软线压力小，反而更容易完成
     if int(e.get("energy_cost") or 1) >= 4:
         p -= 0.05
-    ratio = (plan.get("budget") or {}).get("planned_ratio") or 0.0
+    budget = plan.get("budget") or {}
+    ratio = budget.get("committed_ratio", budget.get("planned_ratio")) or 0.0
     if ratio >= 0.9:
         p -= 0.05                    # 当日排得太满
     if plan.get("warnings"):
@@ -234,6 +242,8 @@ def plan_with_risk(plan: dict, stats: dict | None = None,
     每条 entry 增加 probability / risk / risk_copy（risk 时才有文案）。
     """
     plan = dict(plan)
+    if stats is None:
+        stats = load_history_stats()
     sims = simulate(plan, stats=stats, n=n, seed=seed)
     entries = []
     for s in sims:
