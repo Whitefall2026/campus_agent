@@ -36,7 +36,7 @@ PACKAGE_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 HEADERS = ["Task", "Deadline", "Priority", "Duration", "Location", "Deliverable", "Status"]
 
 
-def make_xlsx(sheets, *, shared=(), epoch1904=False):
+def make_xlsx(sheets, *, shared=(), epoch1904=False, merges=None):
     """sheets=[(名称, 行列表, 可选隐藏状态)]；dict 单元格可指定 t/v/s/f。"""
     workbook = ET.Element("workbook", xmlns=MAIN_NS, attrib={"xmlns:r": REL_NS})
     ET.SubElement(workbook, "workbookPr", date1904="1" if epoch1904 else "0")
@@ -81,6 +81,10 @@ def make_xlsx(sheets, *, shared=(), epoch1904=False):
                         ET.SubElement(run, "t").text = fragment
                 elif "v" in spec:
                     ET.SubElement(cell, "v").text = str(spec["v"])
+        if (merges or {}).get(name):
+            merged = ET.SubElement(root, "mergeCells")
+            for ref in merges[name]:
+                ET.SubElement(merged, "mergeCell", ref=ref)
         files["xl/" + target] = ET.tostring(root, encoding="utf-8")
     files["xl/workbook.xml"] = ET.tostring(workbook, encoding="utf-8")
     files["xl/_rels/workbook.xml.rels"] = ET.tostring(relationships, encoding="utf-8")
@@ -114,6 +118,69 @@ def tasks_xlsx(rows):
 
 
 class TestExcelTodos(unittest.TestCase):
+    def test_daily_plan_merged_dates_units_priorities_and_support_sheets(self):
+        header = ["日期", "任务", "优先级", "计划时长(h)", "勾选", "建议时段"]
+        raw = make_xlsx([
+            ("每日计划", [["计划说明"], header,
+                ["2030-10-08", "示例任务甲", "P0", 1.5, "☐", "13:00-14:30"],
+                [None, "示例任务乙", "P1", 0.5, "☐"],
+                ["当日小计", None, None, 2],
+                ["2030-10-09", "示例任务丙", "P2", 0, "☐"],
+                [None, "日期未提供", "P1", 1, "☐"],
+                ["2030-10-10", "完成任务", "P0", 1, "☑"]]),
+            ("明细", [header,
+                ["2030-10-08", "示例任务甲", "P0", 1.5, "☐"],
+                ["2030-10-08", "示例任务乙", "P1", 0.5, "☐"],
+                ["2030-10-09", "示例任务丙", "P2", 0, "☐"]]),
+            ("课表", [["节次", "周一"], ["1-2", "示例课程"]]),
+            ("说明", [["优先级规则"], ["P0 必做"]]),
+        ], merges={"每日计划": ["A3:A4"]})
+        result = excel_todos.extract_todos(raw)
+        self.assertEqual([t["title"] for t in result["items"]],
+                         ["示例任务甲", "示例任务乙", "示例任务丙", "日期未提供"])
+        self.assertEqual([t["deadline"] for t in result["items"]],
+                         ["2030-10-08", "2030-10-08", "2030-10-09", None])
+        self.assertEqual([t["duration_min"] for t in result["items"]], [90, 30, 1, 60])
+        self.assertEqual([t["priority"] for t in result["items"]], ["high", "medium", "low", "medium"])
+        self.assertTrue(all(t["deadline_time"] is None for t in result["items"]))
+        self.assertTrue(any("计划完成日" in w for w in result["warnings"]))
+        self.assertTrue(any("0" in w and "1 分钟" in w for w in result["warnings"]))
+
+    def test_explicit_deadline_wins_and_duration_header_unit_is_respected(self):
+        raw = make_xlsx([("任务表", [["任务名称", "日期", "截止时间", "预计时长（小时）", "优先级"],
+            ["示例任务", "2030-10-08", "2030-10-12 18:00", 2, " p0 "],
+            ["示例任务二", "2030-10-08", None, "30分钟", "P2"]])])
+        result = excel_todos.extract_todos(raw)
+        self.assertEqual([(t["deadline"], t["deadline_time"], t["duration_min"]) for t in result["items"]],
+                         [("2030-10-12", "18:00", 120), ("2030-10-08", None, 30)])
+
+    def test_completion_in_other_sheet_suppresses_duplicate_in_either_order(self):
+        header = ["任务", "日期", "勾选", "状态"]
+        pending = ("计划", [header, ["示例任务", "2030-10-08", "☐", "未开始"]])
+        completed = ("明细", [header, ["示例任务", "2030-10-08", "☑", "未开始"]])
+        for sheets in ([pending, completed], [completed, pending]):
+            with self.subTest(order=sheets[0][0]):
+                result = excel_todos.extract_todos(make_xlsx(sheets))
+                self.assertEqual(result["items"], [])
+                self.assertEqual(result["skipped"], 2)
+
+    def test_merged_formula_date_without_cache_warns_for_entire_group(self):
+        raw = make_xlsx([("Tasks", [["任务", "日期"],
+            ["示例任务甲", {"f": "TODAY()", "s": 1}], ["示例任务乙"]])],
+            merges={"Tasks": ["B2:B3"]})
+        result = excel_todos.extract_todos(raw)
+        self.assertEqual(result["items"], [])
+        self.assertEqual(result["skipped"], 2)
+        self.assertEqual(sum("公式无缓存" in w for w in result["warnings"]), 2)
+
+    def test_duration_units_and_invalid_values(self):
+        for value, minutes in (("1小时30分钟", 90), ("1h 30min", 90), ("０．５小时", 30), ("0小时", 0)):
+            with self.subTest(value=value):
+                self.assertEqual(excel_todos._duration(value), minutes)
+        for value in ("-1", "nan", "inf", "25小时", "01:60"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                excel_todos._duration(value)
+
     def test_multiple_sheets_shared_inline_and_source_rows(self):
         raw = make_xlsx([
             ("First", [["说明"], [], HEADERS,
@@ -359,6 +426,24 @@ class TestExcelTodoImportHttp(unittest.TestCase):
         self.assertEqual([item["title"] for item in result["items"]], ["Task A", "Task B"])
         self.assertEqual((self.data_dir / "todos.json").read_bytes(), before)
         self.assertEqual(set(self.data_dir.iterdir()), files_before)
+
+    def test_daily_plan_preview_and_import_preserve_recognized_fields(self):
+        header = ["日期", "任务", "计划时长(h)", "优先级", "勾选"]
+        raw = make_xlsx([("Plan", [header,
+            ["2030-10-08", "示例任务甲", 1.5, "P0", "☐"],
+            [None, "示例任务乙", 0.5, "P2", "☐"]]),
+            ("Course", [["节次", "周一"], ["1-2", "示例课程"]])], merges={"Plan": ["A2:A3"]})
+        body = {"name": "plan.xlsx", "data": base64.b64encode(raw).decode("ascii")}
+        status, preview = self.req("POST", "/api/todos/import", body)
+        self.assertEqual(status, 200, preview)
+        self.assertEqual(len(preview["items"]), 2)
+        self.assertEqual(self.persisted(), [])
+        status, result = self.req("POST", "/api/todos/import", {**body, "selected": [0, 1]})
+        self.assertEqual(status, 200, result)
+        self.assertEqual([(t["title"], t["deadline"], t["priority"], t["duration_min"])
+                          for t in self.persisted()],
+                         [("示例任务甲", "2030-10-08", "high", 90),
+                          ("示例任务乙", "2030-10-08", "low", 30)])
 
     def test_selected_index_imports_only_that_task(self):
         status, result = self.req("POST", "/api/todos/import",

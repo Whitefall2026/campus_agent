@@ -105,8 +105,19 @@ def _read_sheets(source) -> list[dict]:
             target = target.lstrip("/") if target.startswith("/") else posixpath.normpath("xl/" + target)
             if not target.startswith("xl/"):
                 raise ValueError("Excel 工作表路径不正确")
+            root = xml(target)
+            vertical_merges = []
+            for merge in root.iter(M + "mergeCell"):
+                match = re.fullmatch(r"([A-Z]+)(\d+):\1(\d+)", merge.get("ref") or "")
+                if match:
+                    first, last = int(match[2]), int(match[3])
+                    if not 1 <= first <= last <= 1048576:
+                        raise ValueError("Excel 合并单元格范围不正确")
+                    vertical_merges.append((_col_index(match[1] + match[2]), first, last))
+                    if len(vertical_merges) > MAX_ROWS:
+                        raise ValueError("Excel 合并单元格超过限制")
             rows, row_numbers, uncached = [], [], []
-            for row in xml(target).iter(M + "row"):
+            for row in root.iter(M + "row"):
                 row_count += 1
                 if row_count > MAX_ROWS:
                     raise ValueError("Excel 超过 10000 行或 100000 单元格限制")
@@ -145,5 +156,6 @@ def _read_sheets(source) -> list[dict]:
                     row_numbers.append(int(row.get("r") or row_count))
                     uncached.append(missing)
             out.append({"name": sheet.get("name") or "工作表", "rows": rows,
-                        "row_numbers": row_numbers, "uncached": uncached})
+                        "row_numbers": row_numbers, "uncached": uncached,
+                        "vertical_merges": vertical_merges})
         return out
